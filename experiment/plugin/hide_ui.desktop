@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=Krita/PythonPlugin
+X-KDE-Library=hide_ui
+X-Krita-Manual=Manual.html
+Name=Hide UI
+Comment=Hides status bar for experiment

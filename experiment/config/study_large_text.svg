@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:krita="http://krita.org/namespaces/svg/krita"
+     width="200" height="80" viewBox="0 0 200 80">
+  <text title="Study Large Text"
+        krita:style-type="paragraph"
+        style="font-size:72pt;font-family:sans-serif"
+        x="10" y="52">Aa</text>
+</svg>

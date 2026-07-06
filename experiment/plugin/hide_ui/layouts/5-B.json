@@ -1,0 +1,22 @@
+{
+  "docks": {
+    "ToolBox": {
+      "area": 1,
+      "width": 66
+    },
+    "ColorSelectorNg": {
+      "area": 2,
+      "width": 262
+    },
+    "PresetDocker": {
+      "area": 2,
+      "width": 262
+    },
+    "KisLayerBox": {
+      "area": 2,
+      "width": 262
+    }
+  },
+  "window_width": 1280,
+  "window_height": 800
+}

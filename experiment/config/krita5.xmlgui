@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kpartgui xmlns="http://www.kde.org/standards/kxmlgui/1.0"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+name="Krita"
+version="544"
+xsi:schemaLocation="http://www.kde.org/standards/kxmlgui/1.0  http://www.kde.org/standards/kxmlgui/1.0/kxmlgui.xsd">
+  <MenuBar>
+    <Menu name="file">
+      <text>&amp;File</text>
+      <Action name="file_save"/>
+      <Action name="file_save_as"/>
+      <Separator/>
+      <Action name="file_close"/>
+      <Action name="file_quit"/>
+    </Menu>
+    <Menu name="edit">
+      <text>&amp;Edit</text>
+      <Action name="edit_undo"/>
+      <Action name="edit_redo"/>
+      <Separator/>
+      <Action name="edit_cut"/>
+      <Action name="edit_copy"/>
+      <Action name="edit_paste"/>
+    </Menu>
+    <Menu name="view">
+      <text>&amp;View</text>
+      <Menu name="ZoomRotateMirror">
+        <text>&amp;Zoom</text>
+        <Action name="view_zoom_in"/>
+        <Action name="view_zoom_out"/>
+        <Action name="zoom_to_100pct"/>
+        <Action name="zoom_to_fit"/>
+      </Menu>
+    </Menu>
+    <Menu name="Layer">
+      <text>&amp;Layer</text>
+      <Action name="add_new_paint_layer"/>
+      <Separator/>
+      <Action name="merge_layer"/>
+      <Action name="flatten_image"/>
+    </Menu>
+    <Menu name="help">
+      <text>&amp;Help</text>
+      <Action name="help_contents"/>
+      <Separator/>
+      <Action name="help_report_bug"/>
+      <Action name="buginfo"/>
+      <Action name="sysinfo"/>
+      <Separator/>
+      <Action name="help_about_app"/>
+    </Menu>
+  </MenuBar>
+  <ToolBar name="mainToolBar" fullWidth="false" noMerge="1">
+    <Text>File</Text>
+    <Action name="file_save"/>
+  </ToolBar>
+  <ToolBar name="editToolBar" fullWidth="false" noMerge="1">
+    <Text>Edit</Text>
+    <Action name="edit_undo"/>
+    <Action name="edit_redo"/>
+  </ToolBar>
+  <ToolBar name="BrushesAndStuff" position="top">
+    <Text>Brush</Text>
+    <Action name="brushslider1"/>
+  </ToolBar>
+</kpartgui>

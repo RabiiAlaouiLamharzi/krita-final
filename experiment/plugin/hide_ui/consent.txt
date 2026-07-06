@@ -1,0 +1,28 @@
+CONSENT TO PARTICIPATE IN RESEARCH
+
+Study: Impact of changing the spatial configuration of commands on the
+learning of software features.
+Team: LOKI - Inria Centre at the University of Lille.
+
+What you will do:
+You will use a simplified version of the Krita drawing software to perform
+a set of guided tasks. At certain points you will be asked to recall and
+click on the location of specific commands as quickly as possible, and to
+answer short questionnaires. The session is conducted remotely while you
+share your screen with the experimenter.
+
+Data:
+Only quantitative interaction data is collected (timings, clicks, accuracy,
+questionnaire answers) together with this signed consent. No sensitive or
+medical data is collected. Your data is pseudonymised behind your
+participant ID.
+
+Voluntary participation:
+Participation is voluntary and unpaid. You may stop at any time without
+giving a reason.
+
+By signing below, you confirm that you have read and understood the above
+and that you agree to participate.
+
+(This is placeholder text - edit consent.txt in the plugin folder to use
+your final approved consent wording.)

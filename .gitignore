@@ -1,0 +1,29 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+
+# Krita source reference (local only; not part of this plugin repo)
+krita-master/
+
+# Large / local-only assets
+experiment/media/*.mov
+experiment/media/references/
+experiment/media/test.mov
+
+# Bundled ffmpeg binaries (reinstall locally if needed)
+experiment/plugin/hide_ui/bin/
+
+# Participant runtime data
+experiment/participant_data/
+~/krita_experiment_data/
+
+# Layout state cache — ship pre-baked blobs; ignore other runtime captures
+*.state
+!experiment/layout_states/
+!experiment/layout_states/*.state
+
+# Editor
+.cursor/
+.idea/
+.vscode/
