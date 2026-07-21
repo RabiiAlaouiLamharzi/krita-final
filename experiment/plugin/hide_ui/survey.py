@@ -1,4 +1,4 @@
-"""Post-recall survey on command-location difficulty and disorientation."""
+"""Session 2 surveys: short post-recall + final end-of-session."""
 
 import traceback
 
@@ -13,15 +13,11 @@ from .ui_controls import WhiteDotToggle
 LIKERT_ANCHOR_LOW = "Strongly disagree"
 LIKERT_ANCHOR_HIGH = "Strongly agree"
 
-# Disorientation / recall-difficulty items (Likert 1-5).
-SESSION_1_LIKERT = [
+# After each Session 2 learning-block recall (not opening recall).
+POST_RECALL_LIKERT = [
     {
         "id": "recall_difficulty",
         "text": "It was difficult to recall where commands were located.",
-    },
-    {
-        "id": "disoriented_layout",
-        "text": "I felt disoriented by the interface layout during the recall test.",
     },
     {
         "id": "hard_without_labels",
@@ -29,13 +25,35 @@ SESSION_1_LIKERT = [
     },
 ]
 
-SESSION_1_OPEN = [
+# End of Session 2 only.
+FINAL_LIKERT = [
+    {
+        "id": "disoriented_layout_switch",
+        "text": (
+            "I felt disoriented when the interface layout switched during "
+            "today's session."),
+    },
+]
+
+FINAL_OPEN = [
     {
         "id": "most_confusing",
         "text": "What was most confusing after today's session?",
         "placeholder": "Type your answer here.",
     },
 ]
+
+# Backward-compatible aliases used by older logging helpers.
+SESSION_1_LIKERT = POST_RECALL_LIKERT + [
+    {
+        "id": "disoriented_layout",
+        "text": "I felt disoriented by the interface layout during the recall test.",
+    },
+]
+SESSION_1_OPEN = FINAL_OPEN
+
+SURVEY_POST_RECALL = "post_recall"
+SURVEY_FINAL = "final"
 
 
 class _LikertRadioCell(QWidget):
@@ -102,22 +120,28 @@ class _LikertRow(QWidget):
 
 
 class SessionSurveyWindow(GatewayWindow):
-    """Likert + open-ended survey after the command recall test."""
+    """Configurable Likert + optional open-ended survey."""
 
-    def __init__(self):
-        super().__init__("Recall feedback")
+    def __init__(self, likert_items, open_items=None, title_text=None,
+                 intro_text=None, survey_type=SURVEY_FINAL, learn_num=0,
+                 phase_index=0):
+        super().__init__("Survey")
+        self._likert_items = list(likert_items or [])
+        self._open_items = list(open_items or [])
         self._likert_rows = []
         self._open_fields = {}
+        self._survey_type = survey_type
+        self._learn_num = int(learn_num or 0)
+        self._phase_index = int(phase_index if phase_index else learn_num or 0)
 
-        title = QLabel("Recall feedback survey")
+        title = QLabel(title_text or "Feedback survey")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet(
             "color: #ffffff; font-size: 22px; font-weight: bold;")
 
-        intro = QLabel(
-            "Please answer the questions below about how difficult it was "
-            "to recall command locations in the interface.\n"
-            "Rate each statement from 1 (strongly disagree) to 5 (strongly agree).")
+        intro = QLabel(intro_text or (
+            "Please answer the questions below.\n"
+            "Rate each statement from 1 (strongly disagree) to 5 (strongly agree)."))
         intro.setWordWrap(True)
         intro.setAlignment(Qt.AlignCenter)
         intro.setStyleSheet("color: #c8c8c8; font-size: 14px; padding: 0 8px;")
@@ -127,46 +151,46 @@ class SessionSurveyWindow(GatewayWindow):
         form_lay.setSpacing(18)
         form_lay.setContentsMargins(4, 4, 12, 4)
 
-        likert_heading = QLabel("Disorientation (rating questions)")
-        likert_heading.setStyleSheet(
-            "color: #ffffff; font-size: 15px; font-weight: bold;")
-        form_lay.addWidget(likert_heading)
+        if self._likert_items:
+            likert_heading = QLabel("Rating questions")
+            likert_heading.setStyleSheet(
+                "color: #ffffff; font-size: 15px; font-weight: bold;")
+            form_lay.addWidget(likert_heading)
+            for item in self._likert_items:
+                row = _LikertRow(item["id"], item["text"])
+                self._likert_rows.append(row)
+                form_lay.addWidget(row)
 
-        for item in SESSION_1_LIKERT:
-            row = _LikertRow(item["id"], item["text"])
-            self._likert_rows.append(row)
-            form_lay.addWidget(row)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #555;")
-        form_lay.addWidget(sep)
-
-        open_heading = QLabel("Open-ended questions")
-        open_heading.setStyleSheet(
-            "color: #ffffff; font-size: 15px; font-weight: bold;")
-        form_lay.addWidget(open_heading)
-
-        for item in SESSION_1_OPEN:
-            label = QLabel(item["text"])
-            label.setWordWrap(True)
-            label.setStyleSheet("color: #ececec; font-size: 14px;")
-            field = QTextEdit()
-            field.setPlaceholderText(item.get("placeholder", ""))
-            field.setMaximumHeight(90)
-            field.setStyleSheet(
-                "background-color: #3c3c3c; color: #e0e0e0;"
-                "border: 1px solid #555; padding: 6px; font-size: 13px;")
-            form_lay.addWidget(label)
-            form_lay.addWidget(field)
-            self._open_fields[item["id"]] = field
+        if self._open_items:
+            if self._likert_items:
+                sep = QFrame()
+                sep.setFrameShape(QFrame.HLine)
+                sep.setStyleSheet("color: #555;")
+                form_lay.addWidget(sep)
+            open_heading = QLabel("Open-ended question")
+            open_heading.setStyleSheet(
+                "color: #ffffff; font-size: 15px; font-weight: bold;")
+            form_lay.addWidget(open_heading)
+            for item in self._open_items:
+                label = QLabel(item["text"])
+                label.setWordWrap(True)
+                label.setStyleSheet("color: #ececec; font-size: 14px;")
+                field = QTextEdit()
+                field.setPlaceholderText(item.get("placeholder", ""))
+                field.setMaximumHeight(90)
+                field.setStyleSheet(
+                    "background-color: #3c3c3c; color: #e0e0e0;"
+                    "border: 1px solid #555; padding: 6px; font-size: 13px;")
+                form_lay.addWidget(label)
+                form_lay.addWidget(field)
+                self._open_fields[item["id"]] = field
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidget(form)
         scroll.setStyleSheet("QScrollArea { background: transparent; }")
-        scroll.setMinimumHeight(320)
+        scroll.setMinimumHeight(280)
 
         self._msg = QLabel("")
         self._msg.setWordWrap(True)
@@ -193,12 +217,18 @@ class SessionSurveyWindow(GatewayWindow):
         outer.setContentsMargins(32, 28, 32, 28)
         outer.addWidget(inner)
 
-        self.setMinimumSize(600, 520)
-        self.resize(640, 580)
+        self.setMinimumSize(600, 480)
+        self.resize(640, 540)
 
     def _try_submit(self):
         missing_likert = []
-        responses = {"likert": {}, "open": {}}
+        responses = {
+            "likert": {},
+            "open": {},
+            "survey_type": self._survey_type,
+            "learn_num": self._learn_num,
+            "phase_index": self._phase_index,
+        }
         for row in self._likert_rows:
             val = row.value()
             if val is None:
@@ -206,7 +236,7 @@ class SessionSurveyWindow(GatewayWindow):
             else:
                 responses["likert"][row.question_id] = val
         missing_open = []
-        for item in SESSION_1_OPEN:
+        for item in self._open_items:
             text = self._open_fields[item["id"]].toPlainText().strip()
             if not text:
                 missing_open.append(item["id"])
@@ -224,7 +254,10 @@ class SessionSurveyWindow(GatewayWindow):
                 self._msg.setText(
                     "Please answer every open-ended question before continuing.")
             return
-        _log("session 1 recall survey completed: %s" % responses)
+        from .experiment_log import log_survey_responses
+        log_survey_responses(responses)
+        _log("survey completed (%s learn=%s): %s" % (
+            self._survey_type, self._learn_num, responses))
         self._finish(responses)
 
     def closeEvent(self, event):
@@ -232,12 +265,50 @@ class SessionSurveyWindow(GatewayWindow):
         event.accept()
 
 
-def run_session_survey():
-    """Show survey at end of Session 2. Returns responses dict or None."""
+def run_post_recall_survey(learn_num=0):
+    """Short 2-item Likert survey after a Session 2 learning-block recall."""
     try:
-        win = SessionSurveyWindow()
+        win = SessionSurveyWindow(
+            likert_items=POST_RECALL_LIKERT,
+            open_items=[],
+            title_text="Recall feedback",
+            intro_text=(
+                "Please rate how this recall block felt.\n"
+                "Rate each statement from 1 (strongly disagree) to 5 "
+                "(strongly agree)."),
+            survey_type=SURVEY_POST_RECALL,
+            learn_num=learn_num,
+            phase_index=int(learn_num or 0))
         suppress_krita_ui(win)
         return win.run_blocking()
     except Exception:
         _log(traceback.format_exc())
         return None
+
+
+def run_final_session_survey():
+    """End-of-session survey: layout-switch disorientation + open question."""
+    try:
+        from .session_flow import session2_tutorial_count
+        phase_index = session2_tutorial_count("A")
+        win = SessionSurveyWindow(
+            likert_items=FINAL_LIKERT,
+            open_items=FINAL_OPEN,
+            title_text="End of session feedback",
+            intro_text=(
+                "Please answer the questions below about today's session.\n"
+                "Rate the statement from 1 (strongly disagree) to 5 "
+                "(strongly agree)."),
+            survey_type=SURVEY_FINAL,
+            learn_num=0,
+            phase_index=phase_index)
+        suppress_krita_ui(win)
+        return win.run_blocking()
+    except Exception:
+        _log(traceback.format_exc())
+        return None
+
+
+def run_session_survey():
+    """Alias for the final Session 2 survey."""
+    return run_final_session_survey()

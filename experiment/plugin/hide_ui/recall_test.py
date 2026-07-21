@@ -203,6 +203,146 @@ def recall_answer_matches(expected, clicked):
     return False
 
 
+def _cluster_1d(values, tol):
+    """Cluster scalar positions; return sorted cluster centers."""
+    if not values:
+        return []
+    ordered = sorted(values)
+    clusters = [[ordered[0]]]
+    for value in ordered[1:]:
+        if abs(value - clusters[-1][-1]) <= tol:
+            clusters[-1].append(value)
+        else:
+            clusters.append([value])
+    return [sum(c) / float(len(c)) for c in clusters]
+
+
+def _nearest_cluster_index(value, centers):
+    best_i = 0
+    best_d = None
+    for index, center in enumerate(centers):
+        dist = abs(value - center)
+        if best_d is None or dist < best_d:
+            best_d = dist
+            best_i = index
+    return best_i
+
+
+def _assign_overlay_slots(overlays):
+    """Assign (col, row) from overlay centers using shared x/y bins.
+
+    Columns share similar x across rows, so one-command-below stays offset_x=0.
+    Returns dict cmd_id -> (col, row). col/row increase rightward / downward.
+    """
+    items = [dict(o) for o in (overlays or []) if o.get("cmd_id")]
+    if not items:
+        return {}
+    widths = [max(1, int(o.get("w") or 1)) for o in items]
+    heights = [max(1, int(o.get("h") or 1)) for o in items]
+    tol_x = max(12, int(0.55 * (sum(widths) / float(len(widths)))))
+    tol_y = max(12, int(0.55 * (sum(heights) / float(len(heights)))))
+    col_centers = _cluster_1d([int(o["cx"]) for o in items], tol_x)
+    row_centers = _cluster_1d([int(o["cy"]) for o in items], tol_y)
+    slots = {}
+    for item in items:
+        col = _nearest_cluster_index(int(item["cx"]), col_centers)
+        row = _nearest_cluster_index(int(item["cy"]), row_centers)
+        slots[str(item["cmd_id"])] = (col, row)
+    return slots
+
+
+def _find_overlay(overlays, cmd_id, match_expected=False):
+    """Find overlay entry for a command id.
+
+    If match_expected is True, also accept preset aliases for that answer id.
+    """
+    if not cmd_id:
+        return None
+    for item in overlays or []:
+        cand = item.get("cmd_id")
+        if not cand:
+            continue
+        if _normalize_recall_cmd(cand) == _normalize_recall_cmd(cmd_id):
+            return item
+        if match_expected and recall_answer_matches(cmd_id, cand):
+            return item
+    return None
+
+
+def compute_recall_click_error(overlays, expected_cmd, clicked_cmd,
+                               click_x=None, click_y=None):
+    """Compute command-slot and pixel error from a recall click.
+
+    Slot convention: 0 = correct; positive x = clicked right of correct;
+    positive y = clicked below correct.
+
+    Pixel offsets use the click point when given, else the clicked overlay center,
+    relative to the correct overlay center.
+
+    Returns a dict with slot_offset_x/y, slot_distance, pixel_offset_x/y,
+    pixel_distance (empty strings when unknown).
+    """
+    empty = {
+        "slot_offset_x": "",
+        "slot_offset_y": "",
+        "slot_distance": "",
+        "pixel_offset_x": "",
+        "pixel_offset_y": "",
+        "pixel_distance": "",
+    }
+    if not expected_cmd or not clicked_cmd or not overlays:
+        return empty
+
+    correct = _find_overlay(overlays, expected_cmd, match_expected=True)
+    clicked = _find_overlay(overlays, clicked_cmd, match_expected=False)
+    if correct is None:
+        return empty
+
+    cx = int(correct["cx"])
+    cy = int(correct["cy"])
+    if click_x is not None and click_y is not None:
+        px = int(click_x)
+        py = int(click_y)
+    elif clicked is not None:
+        px = int(clicked["cx"])
+        py = int(clicked["cy"])
+    else:
+        return empty
+
+    dx = px - cx
+    dy = py - cy
+    dist = (dx * dx + dy * dy) ** 0.5
+    out = {
+        "slot_offset_x": "",
+        "slot_offset_y": "",
+        "slot_distance": "",
+        "pixel_offset_x": int(dx),
+        "pixel_offset_y": int(dy),
+        "pixel_distance": round(dist, 1),
+    }
+
+    if clicked is None:
+        return out
+
+    slots = _assign_overlay_slots(overlays)
+    correct_slot = None
+    clicked_slot = None
+    for cmd_id, slot in slots.items():
+        if recall_answer_matches(expected_cmd, cmd_id):
+            correct_slot = slot
+        if _normalize_recall_cmd(cmd_id) == _normalize_recall_cmd(clicked_cmd):
+            clicked_slot = slot
+    if correct_slot is None or clicked_slot is None:
+        return out
+
+    sox = int(clicked_slot[0] - correct_slot[0])
+    soy = int(clicked_slot[1] - correct_slot[1])
+    out["slot_offset_x"] = sox
+    out["slot_offset_y"] = soy
+    out["slot_distance"] = abs(sox) + abs(soy)
+    return out
+
+
 def recall_score_percent(results, total_questions=None):
     """Return whole-number score (0–100) from recall responses."""
     total = total_questions

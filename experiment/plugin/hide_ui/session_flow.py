@@ -28,8 +28,9 @@ BREAK_MESSAGE = {
 
 
 def session2_tutorial_count(condition):
-    """Condition A: 2 tutorials; B and C: 3 tutorials."""
-    return 2 if condition == "A" else 3
+    """Session 2 has three learning–recall blocks for all conditions (A, B, C)."""
+    del condition
+    return 3
 
 
 def learning_skip_password(condition, session, learn_num):
@@ -147,8 +148,15 @@ HOLD_SESSION2_AFTER_TUTORIAL = {
         "title": "Tutorial 2 complete",
         "body": (
             "Nice work.\n\n"
-            "When you press Continue, you will take a short recall test "
-            "or finish with the survey."),
+            "When you press Continue, you will take a short recall test, "
+            "then the next tutorial will begin."),
+    },
+    3: {
+        "title": "Tutorial 3 complete",
+        "body": (
+            "Nice work.\n\n"
+            "When you press Continue, you will take a short recall test, "
+            "then a short survey, then a break, then the final survey."),
     },
 }
 
@@ -234,6 +242,7 @@ class TimedBreakWindow(GatewayWindow):
         super().__init__(title)
         self._remaining = max(1, int(duration_sec))
         self._skip_password = skip_password
+        self._end_reason = "completed"
         self._tick = QTimer(self)
         self._tick.setInterval(1000)
         self._tick.timeout.connect(self._on_tick)
@@ -299,6 +308,7 @@ class TimedBreakWindow(GatewayWindow):
             QLineEdit.Password)
         if ok and entered == self._skip_password:
             _log("break skipped: %s" % self._skip_password)
+            self._end_reason = "experimenter_skip"
             self._finish(True)
 
     def _on_tick(self):
@@ -329,7 +339,7 @@ class TimedBreakWindow(GatewayWindow):
 
 
 def run_timed_break(skip_password=None):
-    """Show timed break window. Returns True when finished, False if cancelled."""
+    """Show timed break window. Returns (finished_ok, end_reason)."""
     try:
         win = TimedBreakWindow(
             BREAK_MESSAGE["title"],
@@ -337,10 +347,12 @@ def run_timed_break(skip_password=None):
             BREAK_SEC,
             skip_password=skip_password)
         suppress_krita_ui(win)
-        return win.run_blocking() is True
+        if win.run_blocking() is not True:
+            return False, ""
+        return True, getattr(win, "_end_reason", "completed")
     except Exception:
         _log(traceback.format_exc())
-        return False
+        return False, ""
 
 
 class RecallScoreWindow(GatewayWindow):

@@ -26,6 +26,7 @@ EVENT_TO_COMMAND = {
 }
 
 IDLE_THRESHOLD_MS = 2000
+POINTER_MOVE_MIN_INTERVAL_MS = 10
 
 
 def toolbox_command_name(object_name):
@@ -56,14 +57,27 @@ def _command_label(event_type, event_value):
     return value or event_type
 
 
+def _split_pipe(text):
+    items = []
+    for part in str(text or "").split("|"):
+        part = part.strip()
+        if part:
+            items.append(part)
+    return items
+
+
 class LearningTracker:
     """Accumulates per-step metrics; writes learning.csv on Next (updates on revisit)."""
 
-    def __init__(self, write_step=None):
+    def __init__(self, write_step=None, write_pointer=None):
         if write_step is None:
             from .experiment_log import log_learning_step
             write_step = log_learning_step
+        if write_pointer is None:
+            from .experiment_log import log_learning_pointer
+            write_pointer = log_learning_pointer
         self._write = write_step
+        self._write_pointer = write_pointer
         self._active = False
         self._tutorial_number = 0
         self._steps = []
@@ -72,8 +86,10 @@ class LearningTracker:
         self._step_shown_ms = 0
         self._first_match_ms = None
         self._commands_clicked = []
+        self._command_timestamps_ms = []
         self._longest_pause_ms = 0
         self._last_meaningful_ms = 0
+        self._last_pointer_move_ms = 0
         self._step_open = False
         self._step_row_cache = {}
 
@@ -96,6 +112,7 @@ class LearningTracker:
         self._step_markers = [parse_step_markers(s) for s in self._steps]
         self._current_step_index = 0
         self._step_row_cache = {}
+        self._last_pointer_move_ms = 0
         if self._steps:
             self._begin_step(0)
 
@@ -133,21 +150,27 @@ class LearningTracker:
         self._step_open = True
         self._first_match_ms = None
         self._commands_clicked = []
+        self._command_timestamps_ms = []
         self._longest_pause_ms = 0
         self._last_meaningful_ms = now
+        self._last_pointer_move_ms = 0
 
     def _merge_step_data(self, existing, new):
         """Combine metrics when the participant revisits a step after Back."""
         merged = dict(existing)
-        merged["time_on_step_ms"] = (
-            int(existing.get("time_on_step_ms") or 0)
-            + int(new.get("time_on_step_ms") or 0))
-        old_cmds = [
-            c for c in str(existing.get("commands_clicked") or "").split("|") if c]
-        for cmd in str(new.get("commands_clicked") or "").split("|"):
-            if cmd and cmd not in old_cmds:
-                old_cmds.append(cmd)
-        merged["commands_clicked"] = "|".join(old_cmds)
+        merged["step_duration_ms"] = (
+            int(existing.get("step_duration_ms") or 0)
+            + int(new.get("step_duration_ms") or 0))
+        old_cmds = _split_pipe(existing.get("commands_clicked"))
+        old_times = _split_pipe(existing.get("command_timestamps_ms"))
+        while len(old_times) < len(old_cmds):
+            old_times.append("")
+        new_cmds = _split_pipe(new.get("commands_clicked"))
+        new_times = _split_pipe(new.get("command_timestamps_ms"))
+        while len(new_times) < len(new_cmds):
+            new_times.append("")
+        merged["commands_clicked"] = "|".join(old_cmds + new_cmds)
+        merged["command_timestamps_ms"] = "|".join(old_times + new_times)
         old_delay = existing.get("delay_until_matching_action_ms", "")
         new_delay = new.get("delay_until_matching_action_ms", "")
         if old_delay not in (None, "") and new_delay not in (None, ""):
@@ -180,7 +203,7 @@ class LearningTracker:
         if not self._step_shown_ms:
             return
         next_ms = int(step_next_time_ms) if step_next_time_ms else _now_ms()
-        time_on_step = max(0, next_ms - self._step_shown_ms)
+        step_duration = max(0, next_ms - self._step_shown_ms)
         delay_match = (
             (self._first_match_ms - self._step_shown_ms)
             if self._first_match_ms else "")
@@ -194,11 +217,13 @@ class LearningTracker:
         step_number = self._current_step_index + 1
         new_data = {
             "step_number": step_number,
-            "time_on_step_ms": time_on_step,
+            "step_duration_ms": step_duration,
             "delay_until_matching_action_ms": delay_match,
             "followed_instruction": followed,
             "longest_pause_ms": pause,
             "commands_clicked": "|".join(self._commands_clicked),
+            "command_timestamps_ms": "|".join(
+                str(t) for t in self._command_timestamps_ms),
             "required_command": required_command_for_step(step_text),
         }
         update_existing = step_number in self._step_row_cache
@@ -277,11 +302,37 @@ class LearningTracker:
         now = _now_ms()
         self._note_meaningful_action(now)
         label = _command_label(event_type, event_value)
+        rel_ms = max(0, now - self._step_shown_ms) if self._step_shown_ms else 0
         if label:
             self._commands_clicked.append(label)
+            self._command_timestamps_ms.append(int(rel_ms))
         match = self._match_for_current_step(event_type, event_value)
         if match in ("yes", "partial") and self._first_match_ms is None:
             self._first_match_ms = now
+
+    def on_pointer_event(self, event_type, x=0, y=0, clicked_target=""):
+        """Log mouse move/click during an open learning step (x/y window coords)."""
+        if not self._active or not self._step_open:
+            return
+        now = _now_ms()
+        et = str(event_type or "")
+        if et == "move":
+            if (self._last_pointer_move_ms
+                    and now - self._last_pointer_move_ms < POINTER_MOVE_MIN_INTERVAL_MS):
+                return
+            self._last_pointer_move_ms = now
+        rel_ms = max(0, now - self._step_shown_ms) if self._step_shown_ms else 0
+        try:
+            self._write_pointer(
+                tutorial_number=self._tutorial_number,
+                step_number=self._current_step_index + 1,
+                ms_from_step_start=int(rel_ms),
+                event_type=et,
+                x=int(x),
+                y=int(y),
+                clicked_target=str(clicked_target or ""))
+        except Exception:
+            pass
 
     def on_tool_selected(self, command_name):
         if command_name:

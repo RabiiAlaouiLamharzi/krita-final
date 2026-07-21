@@ -1,10 +1,11 @@
 """Split CSV logs for participant runs — durations in milliseconds (no wall-clock timestamps).
 
 Each session run folder contains:
-  phases.csv        — consent, learning, recall, survey blocks
-  learning.csv      — one row per instruction step (on Next click)
-  recall_trials.csv — one row per recall question
-  survey.csv        — one row per survey submission
+  phases.csv         — learning, recall, survey, break blocks
+  learning.csv       — one row per instruction step (on Next click)
+  learning_pointer.csv — throttled mouse moves/clicks during learning
+  recall_trials.csv  — one row per recall question
+  survey.csv         — one row per survey submission
 """
 
 import csv
@@ -19,52 +20,73 @@ from .experiment import _log as debug_log
 RUN_META_KEYS = ("run_folder_id",)
 
 PHASES_COLUMNS = RUN_META_KEYS + (
-    "phase_block_type",
-    "tutorial_number",
-    "learning_phase_number",
+    "phase_end_reason",
+    "phase_type",
+    "phase_index",
     "planned_time_limit_ms",
     "block_duration_ms",
-    "block_ended_reason",
-    "total_question_count",
-    "answered_question_count",
-    "correct_answer_count",
-    "recall_score_percent",
 )
 
 LEARNING_COLUMNS = RUN_META_KEYS + (
     "tutorial_number",
     "step_number",
-    "time_on_step_ms",
-    "delay_until_matching_action_ms",
-    "followed_instruction",
-    "longest_pause_ms",
-    "commands_clicked",
+    "step_duration_ms",
     "required_command",
+    "commands_clicked",
+    "command_timestamps_ms",
+    "followed_instruction",
+    "delay_until_matching_action_ms",
+    "longest_pause_ms",
+)
+
+LEARNING_POINTER_COLUMNS = RUN_META_KEYS + (
+    "tutorial_number",
+    "step_number",
+    "ms_from_step_start",
+    "event_type",
+    "x",
+    "y",
+    "clicked_target",
 )
 
 RECALL_TRIALS_COLUMNS = RUN_META_KEYS + (
+    "recall_block_end_reason",
     "tutorial_number",
     "question_order_number",
-    "question_identifier_code",
+    "question_id",
     "question_text_prompt",
-    "response_duration_ms",
     "participant_did_answer",
-    "answer_was_correct",
-    "answer_outcome_category",
     "participant_answer_text",
-    "recall_block_was_skipped",
+    "response_duration_ms",
+    "answer_was_correct",
+    "slot_offset_x",
+    "slot_offset_y",
+    "slot_distance",
+    "pixel_offset_x",
+    "pixel_offset_y",
+    "pixel_distance",
 )
 
-SURVEY_META_COLUMNS = RUN_META_KEYS + ("survey_duration_ms",)
+SURVEY_META_COLUMNS = RUN_META_KEYS + (
+    "survey_type",
+    "survey_duration_ms",
+)
 
 SURVEY_COLUMN_NAMES = {
     "recall_difficulty": "survey_recall_difficulty_rating",
-    "disoriented_layout": "survey_felt_disoriented_rating",
     "hard_without_labels": "survey_no_labels_difficulty_rating",
+    "disoriented_layout_switch": "survey_felt_disoriented_switch_rating",
     "most_confusing": "survey_most_confusing_text",
 }
 
-PHASE_TYPES = frozenset(("learning", "recall", "consent", "survey"))
+SURVEY_ITEM_ORDER = (
+    "recall_difficulty",
+    "hard_without_labels",
+    "disoriented_layout_switch",
+    "most_confusing",
+)
+
+PHASE_TYPES = frozenset(("learning", "recall", "survey", "break"))
 
 
 def _now_ms():
@@ -126,11 +148,7 @@ def _write_csv(path, columns, rows):
             writer.writerow({col: _cell(row.get(col, "")) for col in columns})
 
 
-def _format_participant_answer(clicked, outcome):
-    if outcome == "phase_skipped":
-        return "Block skipped (experimenter)"
-    if outcome == "unanswered":
-        return "Unanswered"
+def _format_participant_answer(clicked):
     if not clicked:
         return "Unanswered"
     return str(clicked)
@@ -147,6 +165,8 @@ class ExperimentLogger:
         self._logged_recall_nums = set()
         self._pending_question = None
         self._survey_buffer = {}
+        self._survey_meta = {}
+        self._recall_block_end_reason = ""
 
     @property
     def path(self):
@@ -164,6 +184,7 @@ class ExperimentLogger:
         return {
             "phases": os.path.join(base, "phases.csv"),
             "learning": os.path.join(base, "learning.csv"),
+            "learning_pointer": os.path.join(base, "learning_pointer.csv"),
             "recall_trials": os.path.join(base, "recall_trials.csv"),
             "survey": os.path.join(base, "survey.csv"),
         }
@@ -192,9 +213,9 @@ class ExperimentLogger:
             self._logged_recall_nums = set()
             self._pending_question = None
             self._survey_buffer = {}
+            self._survey_meta = {}
+            self._recall_block_end_reason = ""
             self._init_run_csv_files()
-            if session.get("consent_signed"):
-                self._log_consent()
             debug_log("experiment log started: %s" % self._run_dir)
             return self._run_dir
         except Exception:
@@ -207,102 +228,61 @@ class ExperimentLogger:
     def _init_run_csv_files(self):
         """Create CSV files with headers as soon as the session starts."""
         paths = self._paths()
+        survey_cols = tuple(SURVEY_META_COLUMNS) + tuple(
+            SURVEY_COLUMN_NAMES[qid] for qid in SURVEY_ITEM_ORDER
+            if qid in SURVEY_COLUMN_NAMES)
         for key, cols in (
                 ("phases", PHASES_COLUMNS),
                 ("learning", LEARNING_COLUMNS),
-                ("recall_trials", RECALL_TRIALS_COLUMNS)):
+                ("learning_pointer", LEARNING_POINTER_COLUMNS),
+                ("recall_trials", RECALL_TRIALS_COLUMNS),
+                ("survey", survey_cols)):
             path = paths[key]
             if os.path.isfile(path):
                 continue
             with open(path, "w", newline="", encoding="utf-8") as handle:
                 writer = csv.DictWriter(handle, fieldnames=cols)
                 writer.writeheader()
-        row = dict(self._run_meta())
-        session_num = int((self._session or {}).get("session", 0) or 0)
-        row.update({
-            "phase_block_type": "session",
-            "tutorial_number": 0,
-            "learning_phase_number": session_num,
-            "planned_time_limit_ms": "",
-            "block_duration_ms": 0,
-            "block_ended_reason": "session_started",
-            "total_question_count": "",
-            "answered_question_count": "",
-            "correct_answer_count": "",
-            "recall_score_percent": "",
-        })
-        _append_csv(paths["phases"], PHASES_COLUMNS, row)
 
-    def _log_consent(self):
-        row = dict(self._run_meta())
-        row.update({
-            "phase_block_type": "consent",
-            "tutorial_number": 0,
-            "learning_phase_number": "",
-            "planned_time_limit_ms": "",
-            "block_duration_ms": 0,
-            "block_ended_reason": "consent_accepted",
-            "total_question_count": "",
-            "answered_question_count": "",
-            "correct_answer_count": "",
-            "recall_score_percent": "",
-        })
-        _append_csv(self._paths()["phases"], PHASES_COLUMNS, row)
+    def _phase_key(self, phase_type, phase_index=0):
+        return "%s:%s" % (phase_type, int(phase_index or 0))
 
-    def _phase_key(self, phase_type, learn_num=None):
-        return "%s:%s" % (phase_type, int(learn_num or 0))
-
-    def _start_phase(self, phase_type, learn_num=0, **fields):
+    def _start_phase(self, phase_type, phase_index=0, **fields):
         if phase_type not in PHASE_TYPES:
             return
-        key = self._phase_key(phase_type, learn_num)
+        idx = int(phase_index or 0)
+        key = self._phase_key(phase_type, idx)
         planned_ms = fields.get("planned_duration_ms")
         if planned_ms is None and fields.get("duration_sec") is not None:
             planned_ms = int(fields["duration_sec"]) * 1000
         self._open_phases[key] = {
             **self._run_meta(),
-            "phase_block_type": phase_type,
-            "tutorial_number": int(learn_num or 0),
-            "learning_phase_number": fields.get("phase", ""),
+            "phase_type": phase_type,
+            "phase_index": idx,
             "planned_time_limit_ms": planned_ms if planned_ms is not None else "",
             "block_duration_ms": "",
-            "block_ended_reason": "",
-            "total_question_count": fields.get("question_count", ""),
-            "answered_question_count": "",
-            "correct_answer_count": "",
-            "recall_score_percent": "",
+            "phase_end_reason": "",
             "_started_at_ms": _now_ms(),
-            "_interface_layout_code": fields.get("layout", ""),
-            "_is_practice_trial": fields.get("practice", ""),
         }
 
-    def _end_phase(self, phase_type, learn_num=0, ended_reason="", **fields):
+    def _end_phase(self, phase_type, phase_index=0, ended_reason="", **fields):
         if phase_type not in PHASE_TYPES:
             return 0
-        key = self._phase_key(phase_type, learn_num)
+        idx = int(phase_index or 0)
+        key = self._phase_key(phase_type, idx)
         row = self._open_phases.pop(key, None)
         if row is None:
             row = {
                 **self._run_meta(),
-                "phase_block_type": phase_type,
-                "tutorial_number": int(learn_num or 0),
+                "phase_type": phase_type,
+                "phase_index": idx,
                 "_started_at_ms": _now_ms(),
             }
         ended_ms = _now_ms()
         started = row.get("_started_at_ms") or ended_ms
         duration_ms = max(0, int(ended_ms) - int(started))
         row["block_duration_ms"] = duration_ms
-        row["block_ended_reason"] = ended_reason or fields.get("reason", "")
-        mapping = {
-            "question_count": "total_question_count",
-            "answered_count": "answered_question_count",
-            "correct_count": "correct_answer_count",
-            "score_percent": "recall_score_percent",
-            "phase_index": "learning_phase_number",
-        }
-        for src, dest in mapping.items():
-            if src in fields and fields[src] is not None:
-                row[dest] = fields[src]
+        row["phase_end_reason"] = ended_reason or fields.get("reason", "")
         phase_row = {k: v for k, v in row.items() if not k.startswith("_")}
         _append_csv(self._paths()["phases"], PHASES_COLUMNS, phase_row)
         return duration_ms
@@ -399,53 +379,99 @@ class ExperimentLogger:
                 return
         _append_csv(path, LEARNING_COLUMNS, row)
 
+    def log_learning_pointer(self, tutorial_number, **fields):
+        if not self._run_dir:
+            return
+        row = {
+            **self._run_meta(),
+            "tutorial_number": int(tutorial_number or 0),
+        }
+        for col in LEARNING_POINTER_COLUMNS:
+            if col in row:
+                continue
+            if col in fields and fields[col] is not None:
+                row[col] = fields[col]
+        _append_csv(
+            self._paths()["learning_pointer"], LEARNING_POINTER_COLUMNS, row)
+
     def register_recall_questions(self, questions, learn_num=0):
         self._recall_questions = list(questions or [])
         self._recall_learn_num = int(learn_num or 0)
         self._logged_recall_nums = set()
         self._pending_question = None
+        self._recall_block_end_reason = ""
+
+    def _patch_recall_block_end_reason(self, tutorial_number, reason):
+        if not self._run_dir or not reason:
+            return
+        path = self._paths()["recall_trials"]
+        run_id = str(self._run_id or "")
+        tut = int(tutorial_number or 0)
+        rows = _read_csv(path, RECALL_TRIALS_COLUMNS)
+        changed = False
+        for row in rows:
+            if (str(row.get("run_folder_id") or "") == run_id
+                    and int(row.get("tutorial_number") or 0) == tut):
+                row["recall_block_end_reason"] = reason
+                changed = True
+        if changed:
+            _write_csv(path, RECALL_TRIALS_COLUMNS, rows)
 
     def log_e(self, event, **fields):
         if not self._run_dir:
             return
         action = fields.get("action")
         learn_num = int(fields.get("learn_num", 0) or 0)
+        phase_index = int(fields.get("phase_index", learn_num) or 0)
 
         if event == "learning":
             if action == "start":
                 self._start_phase(
-                    "learning", learn_num=learn_num,
-                    phase=fields.get("phase"),
-                    layout=fields.get("layout"),
-                    practice=fields.get("practice"),
+                    "learning", phase_index=learn_num,
                     duration_sec=fields.get("duration_sec"))
             elif action == "end":
                 self._end_phase(
-                    "learning", learn_num=learn_num,
+                    "learning", phase_index=learn_num,
                     ended_reason=fields.get("reason", "timer_finished"))
 
         elif event == "recall":
             if action == "start":
                 self._recall_learn_num = learn_num
+                self._recall_block_end_reason = ""
+                self._start_phase("recall", phase_index=learn_num)
+            elif action == "end":
+                reason = fields.get("reason", "ended")
+                self._recall_block_end_reason = reason
+                self._patch_recall_block_end_reason(learn_num, reason)
+                self._end_phase(
+                    "recall", phase_index=learn_num,
+                    ended_reason=reason)
+
+        elif event == "break":
+            if action == "start":
                 self._start_phase(
-                    "recall", learn_num=learn_num,
-                    question_count=fields.get("question_count"))
+                    "break", phase_index=learn_num,
+                    duration_sec=fields.get("duration_sec"))
             elif action == "end":
                 self._end_phase(
-                    "recall", learn_num=learn_num,
-                    ended_reason=fields.get("reason", "block_finished"),
-                    question_count=fields.get("question_count"),
-                    answered_count=fields.get("answered_count"),
-                    correct_count=fields.get("correct_count"),
-                    score_percent=fields.get("score_percent"))
+                    "break", phase_index=learn_num,
+                    ended_reason=fields.get("reason", "completed"))
 
         elif event == "survey":
             if action == "start":
                 self._survey_buffer = {}
-                self._start_phase("survey", learn_num=0)
+                phase_index = int(fields.get("phase_index", learn_num) or 0)
+                self._survey_meta = {
+                    "survey_type": fields.get("survey_type", ""),
+                    "phase_index": phase_index,
+                }
+                self._start_phase("survey", phase_index=phase_index)
             elif action == "end":
+                phase_index = int(
+                    (getattr(self, "_survey_meta", {}) or {}).get(
+                        "phase_index", learn_num) or 0)
                 duration_ms = self._end_phase(
-                    "survey", learn_num=0,
+                    "survey", phase_index=phase_index,
                     ended_reason="survey_completed")
                 self._flush_survey(duration_ms=duration_ms)
 
@@ -471,26 +497,13 @@ class ExperimentLogger:
                 self._survey_buffer[str(qid)] = fields.get("response", "")
 
     def _append_recall_trial(self, fields):
+        if bool(fields.get("phase_skipped")):
+            return
         correct = bool(fields.get("correct"))
         timeout = bool(fields.get("timeout"))
-        phase_skipped = bool(fields.get("phase_skipped"))
         clicked = fields.get("clicked")
         has_click = clicked not in (None, "")
-
-        if phase_skipped:
-            outcome = "phase_skipped"
-            answered = False
-            correct = False
-        elif timeout or not has_click:
-            outcome = "unanswered"
-            answered = False
-            correct = False
-        elif correct:
-            outcome = "correct"
-            answered = True
-        else:
-            outcome = "incorrect"
-            answered = True
+        answered = bool(has_click and not timeout)
 
         presented_ms = fields.get("presented_ms", "")
         question_num = fields.get("num", "")
@@ -512,27 +525,48 @@ class ExperimentLogger:
         elif fields.get("time_taken_ms") not in (None, ""):
             response_duration_ms = int(fields["time_taken_ms"])
 
+        if timeout or not has_click:
+            correct = False
+
+        block_reason = (
+            fields.get("recall_block_end_reason")
+            or self._recall_block_end_reason
+            or "")
+
         row = {
             **self._run_meta(),
+            "recall_block_end_reason": block_reason,
             "tutorial_number": self._recall_learn_num,
             "question_order_number": question_num,
-            "question_identifier_code": question_id,
+            "question_id": question_id,
             "question_text_prompt": prompt,
-            "response_duration_ms": response_duration_ms,
             "participant_did_answer": answered,
+            "participant_answer_text": _format_participant_answer(clicked),
+            "response_duration_ms": response_duration_ms,
             "answer_was_correct": correct,
-            "answer_outcome_category": outcome,
-            "participant_answer_text": _format_participant_answer(clicked, outcome),
-            "recall_block_was_skipped": phase_skipped,
+            "slot_offset_x": fields.get("slot_offset_x", ""),
+            "slot_offset_y": fields.get("slot_offset_y", ""),
+            "slot_distance": fields.get("slot_distance", ""),
+            "pixel_offset_x": fields.get("pixel_offset_x", ""),
+            "pixel_offset_y": fields.get("pixel_offset_y", ""),
+            "pixel_distance": fields.get("pixel_distance", ""),
         }
         _append_csv(self._paths()["recall_trials"], RECALL_TRIALS_COLUMNS, row)
         if question_num:
             self._logged_recall_nums.add(int(question_num))
-        if not phase_skipped:
-            self._pending_question = None
+        self._pending_question = None
 
-    def finalize_recall_block(self, questions, partial_results, phase_skipped=False):
+    def finalize_recall_block(self, questions, partial_results,
+                              phase_skipped=False, block_end_reason="ended"):
         """Fill missing recall rows and return a complete per-question result list."""
+        if phase_skipped:
+            self._recall_questions = []
+            self._logged_recall_nums = set()
+            self._pending_question = None
+            return []
+
+        self._recall_block_end_reason = block_end_reason or "ended"
+
         by_id = {}
         for row in partial_results or []:
             qid = str(row.get("question_id", ""))
@@ -545,18 +579,12 @@ class ExperimentLogger:
             qid = str(question.get("id", ""))
             if qid in by_id:
                 row = dict(by_id[qid])
-                if row.get("phase_skipped"):
-                    row["outcome"] = "phase_skipped"
-                    row["unanswered"] = True
-                elif row.get("timeout") or not row.get("clicked"):
-                    row["outcome"] = "unanswered"
+                if row.get("timeout") or not row.get("clicked"):
                     row["unanswered"] = True
                     row["correct"] = False
                 elif row.get("correct"):
-                    row["outcome"] = "correct"
                     row["unanswered"] = False
                 else:
-                    row["outcome"] = "incorrect"
                     row["unanswered"] = False
                 complete.append(row)
                 continue
@@ -575,8 +603,8 @@ class ExperimentLogger:
                 "time_taken_ms": 0,
                 "correct": False,
                 "clicked": "",
-                "timeout": not phase_skipped,
-                "phase_skipped": phase_skipped,
+                "timeout": True,
+                "recall_block_end_reason": block_end_reason,
             })
             complete.append({
                 "question_id": qid,
@@ -584,13 +612,12 @@ class ExperimentLogger:
                 "expected": question.get("answer", ""),
                 "clicked": None,
                 "correct": False,
-                "timeout": not phase_skipped,
-                "phase_skipped": phase_skipped,
+                "timeout": True,
                 "unanswered": True,
-                "outcome": "phase_skipped" if phase_skipped else "unanswered",
                 "time_taken_ms": 0,
             })
 
+        self._patch_recall_block_end_reason(self._recall_learn_num, block_end_reason)
         self._recall_questions = []
         self._logged_recall_nums = set()
         self._pending_question = None
@@ -599,33 +626,33 @@ class ExperimentLogger:
     def _flush_survey(self, duration_ms=0):
         if not self._survey_buffer:
             return
-        try:
-            from .survey import SESSION_1_LIKERT, SESSION_1_OPEN
-            item_ids = [item["id"] for item in SESSION_1_LIKERT]
-            item_ids += [item["id"] for item in SESSION_1_OPEN]
-        except Exception:
-            item_ids = sorted(self._survey_buffer.keys())
+        meta = getattr(self, "_survey_meta", {}) or {}
         survey_cols = tuple(
-            SURVEY_COLUMN_NAMES.get(qid, qid) for qid in item_ids)
+            SURVEY_COLUMN_NAMES.get(qid, qid) for qid in SURVEY_ITEM_ORDER)
         columns = tuple(SURVEY_META_COLUMNS) + survey_cols
         row = {
             **self._run_meta(),
+            "survey_type": meta.get("survey_type", ""),
             "survey_duration_ms": int(duration_ms or 0),
         }
-        for qid in item_ids:
+        for qid in SURVEY_ITEM_ORDER:
             col = SURVEY_COLUMN_NAMES.get(qid, qid)
             row[col] = self._survey_buffer.get(qid, "")
-        _write_csv(self._paths()["survey"], columns, [row])
+        _append_csv(self._paths()["survey"], columns, row)
+        debug_log("survey responses saved to %s (%s)" % (
+            self._paths()["survey"],
+            meta.get("survey_type", "")))
         self._survey_buffer = {}
+        self._survey_meta = {}
 
     def end_session(self, action="complete"):
         if not self._run_dir:
             return
         try:
             for key in list(self._open_phases.keys()):
-                phase_type, learn_num = key.split(":", 1)
+                phase_type, phase_index = key.split(":", 1)
                 if phase_type in PHASE_TYPES:
-                    self._end_phase(phase_type, learn_num=int(learn_num),
+                    self._end_phase(phase_type, phase_index=int(phase_index),
                                     ended_reason=action)
             debug_log("experiment log ended (%s): %s" % (action, self._run_dir))
         finally:
@@ -637,6 +664,8 @@ class ExperimentLogger:
             self._logged_recall_nums = set()
             self._pending_question = None
             self._survey_buffer = {}
+            self._survey_meta = {}
+            self._recall_block_end_reason = ""
 
 
 _LOGGER = ExperimentLogger()
@@ -662,9 +691,12 @@ def register_recall_questions(questions, learn_num=0):
     _LOGGER.register_recall_questions(questions, learn_num=learn_num)
 
 
-def finalize_recall_block(questions, partial_results, phase_skipped=False):
+def finalize_recall_block(questions, partial_results, phase_skipped=False,
+                          block_end_reason="ended"):
     return _LOGGER.finalize_recall_block(
-        questions, partial_results, phase_skipped=phase_skipped)
+        questions, partial_results,
+        phase_skipped=phase_skipped,
+        block_end_reason=block_end_reason)
 
 
 def end_session(action="complete"):
@@ -681,8 +713,48 @@ def log_learning_row(**fields):
     log_learning_step(**fields)
 
 
+def log_learning_pointer(**fields):
+    tutorial_number = fields.pop("tutorial_number", 0)
+    _LOGGER.log_learning_pointer(tutorial_number, **fields)
+
+
 def save_learning_drawing(tutorial_number):
     return _LOGGER.save_learning_drawing(tutorial_number)
+
+
+def _encode_survey_type(survey_type, learn_num=0, phase_index=0):
+    st = str(survey_type or "").strip()
+    if st == "post_recall" and learn_num:
+        return "post_recall_%d" % int(learn_num)
+    if st == "final":
+        return "final"
+    return st
+
+
+def log_survey_responses(responses):
+    """Write survey likert + open answers to survey.csv and phases.csv."""
+    if not responses:
+        return
+    learn_num = int(responses.get("learn_num", 0) or 0)
+    phase_index = int(responses.get("phase_index", learn_num) or 0)
+    survey_type = _encode_survey_type(
+        responses.get("survey_type") or "",
+        learn_num=learn_num,
+        phase_index=phase_index)
+    _LOGGER.log_e(
+        "survey", action="start",
+        survey_type=survey_type,
+        learn_num=learn_num,
+        phase_index=phase_index)
+    for qid, val in (responses.get("likert") or {}).items():
+        _LOGGER.log_t("survey", question_id=qid, response=val)
+    for qid, text in (responses.get("open") or {}).items():
+        _LOGGER.log_t("survey", question_id=qid, response=text)
+    _LOGGER.log_e(
+        "survey", action="end",
+        survey_type=survey_type,
+        learn_num=learn_num,
+        phase_index=phase_index)
 
 
 def get_run_dir():

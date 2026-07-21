@@ -14,7 +14,7 @@ from PyQt5.QtCore import Qt, QEventLoop, QTimer
 from PyQt5.QtWidgets import (
     QLabel, QLineEdit, QComboBox, QPushButton, QVBoxLayout,
     QHBoxLayout, QFormLayout, QWidget, QTextEdit,
-    QApplication, QFrame, QScrollArea)
+    QApplication, QScrollArea)
 
 from .ui_controls import WhiteDotToggle
 
@@ -135,35 +135,40 @@ def load_password_hashes():
     return hashed
 
 
-DEFAULT_CONSENT = """CONSENT TO PARTICIPATE IN RESEARCH
-
-Study: Impact of changing the spatial configuration of commands on the
-learning of software features.
-Team: LOKI - Inria Centre at the University of Lille.
-
-What you will do:
-You will use a simplified version of the Krita drawing software to perform
-a set of guided tasks. At certain points you will be asked to recall and
-click on the location of specific commands as quickly as possible, and to
-answer short questionnaires. The session is conducted remotely while you
-share your screen with the experimenter.
-
-Data:
-Only quantitative interaction data is collected (timings, clicks, accuracy,
-questionnaire answers) together with this signed consent. No sensitive or
-medical data is collected. Your data is pseudonymised behind your
-participant ID.
-
-Voluntary participation:
-Participation is voluntary and unpaid. You may stop at any time without
-giving a reason.
-
-By signing below, you confirm that you have read and understood the above
-and that you agree to participate.
-
-(This is placeholder text - edit consent.txt in the plugin folder to use
-your final approved consent wording.)
-"""
+DEFAULT_CONSENT = (
+    "You are invited to take part in a research study on how people learn "
+    "tools and buttons in a drawing program. The study is conducted by the "
+    "Loop team (Inria Center at the University of Lille).\n\n"
+    "The study has two online sessions. Each session lasts about 60 minutes. "
+    "The sessions take place roughly 48 hours apart.\n\n"
+    "The sessions are conducted remotely. You will share your screen with "
+    "the experimenter. The experimenter will guide you through the steps, "
+    "answer questions about the procedure, and help if something on screen "
+    "looks unexpected.\n\n"
+    "In each session, you will use a simplified version of the \"Krita\" "
+    "drawing program on your computer. First, you will complete short guided "
+    "tasks to learn a set of tools and panels. Then, these commands will be "
+    "hidden behind white boxes, and you will be asked to locate and click "
+    "them as quickly and accurately as possible. This allows us to measure "
+    "your spatial memory and how well you remember the location of Krita "
+    "commands.\n\n"
+    "In Session 2, we will modify the Krita interface layout. This change "
+    "is a key part of the study, as we intend to understand how you adapt "
+    "to new interface arrangements.\n\n"
+    "During the experiment, we will collect quantitative interaction data, "
+    "including task completion times, clicks, and response accuracy. You may "
+    "also be asked to complete short surveys, including both open-ended "
+    "questions and Likert-scale items. We will record this qualitative "
+    "feedback as well. No sensitive, medical, or financial information will "
+    "be collected.\n\n"
+    "Participation is voluntary and unpaid. You may stop at any time without "
+    "giving a reason and without any negative consequence. If you decide to "
+    "stop, please tell the experimenter. You can also ask questions about the "
+    "study before you agree to take part.\n\n"
+    "By agreeing below, you confirm that you have read and understood this "
+    "information and that you agree to participate under the conditions "
+    "described here.\n"
+)
 
 
 def load_consent():
@@ -203,6 +208,9 @@ class GatewayWindow(QWidget):
                 border: none; padding: 8px 20px; min-width: 90px;
             }
             QPushButton:hover { background-color: #5a7fb5; }
+            QPushButton:disabled {
+                background-color: #444; color: #888;
+            }
             QPushButton#quitBtn {
                 background-color: #555; color: #e0e0e0;
             }
@@ -262,46 +270,38 @@ class ConsentWindow(GatewayWindow):
 
     def __init__(self, consent_text):
         super().__init__("Consent Form")
-
-        title = QLabel("Consent to Participate")
-        f = title.font()
-        f.setPointSize(18)
-        f.setBold(True)
-        title.setFont(f)
-        title.setAlignment(Qt.AlignCenter)
+        self._read_to_end = False
 
         notice = QLabel(
-            "You must read and agree before you can use the software.")
+            "Please scroll through the information below before you can agree.")
         notice.setAlignment(Qt.AlignCenter)
+        notice.setWordWrap(True)
         notice.setStyleSheet("color:#aaa;")
 
-        rules_label = QLabel("Onboarding rules")
-        rules_label.setStyleSheet("font-weight: bold; color: #ccc;")
+        body = QLabel(consent_text.strip())
+        body.setWordWrap(True)
+        body.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        body.setStyleSheet(
+            "color: #e0e0e0; font-size: 14px; background: transparent;"
+            " padding: 12px 14px; line-height: 1.4;")
+        body.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
-        rules_text = QTextEdit()
-        rules_text.setReadOnly(True)
-        rules_text.setPlainText(consent_text)
-        rules_text.setFrameStyle(QFrame.NoFrame)
-
-        rules_scroll = QScrollArea()
-        rules_scroll.setWidget(rules_text)
-        rules_scroll.setWidgetResizable(True)
-        rules_scroll.setFixedHeight(280)
-        rules_scroll.setStyleSheet(
-            "QScrollArea { border: 1px solid #555; background: #3c3c3c; }")
-
-        rules_box = QVBoxLayout()
-        rules_box.setSpacing(6)
-        rules_box.addWidget(rules_label)
-        rules_box.addWidget(rules_scroll)
-
-        rules_widget = QWidget()
-        rules_widget.setLayout(rules_box)
+        self._rules_scroll = QScrollArea()
+        self._rules_scroll.setWidget(body)
+        self._rules_scroll.setWidgetResizable(True)
+        self._rules_scroll.setFixedHeight(300)
+        self._rules_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._rules_scroll.setStyleSheet(
+            "QScrollArea { border: 1px solid #555; background: #3c3c3c; }"
+            " QScrollArea > QWidget > QWidget { background: #3c3c3c; }")
 
         self.agree = WhiteDotToggle()
+        self.agree.setEnabled(False)
         agree_text = QLabel(
             "I have read and understood the above and I agree to participate.")
         agree_text.setWordWrap(True)
+        agree_text.setStyleSheet("color: #888;")
+        self._agree_text = agree_text
 
         agree_row = QHBoxLayout()
         agree_row.setContentsMargins(0, 0, 0, 0)
@@ -313,13 +313,15 @@ class ConsentWindow(GatewayWindow):
         agree_lay.setContentsMargins(0, 12, 0, 12)
         agree_lay.addLayout(agree_row)
 
-        self.msg = QLabel("")
-        self.msg.setStyleSheet("color:#e06c6c;")
+        self.msg = QLabel(
+            "Scroll to the end of the text to unlock the agreement.")
+        self.msg.setStyleSheet("color:#aaa;")
         self.msg.setWordWrap(True)
         self.msg.setAlignment(Qt.AlignCenter)
 
         self.submitBtn = QPushButton("Continue")
         self.submitBtn.setDefault(True)
+        self.submitBtn.setEnabled(False)
         btns = QHBoxLayout()
         btns.addStretch()
         btns.addWidget(self.submitBtn)
@@ -327,10 +329,9 @@ class ConsentWindow(GatewayWindow):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(32, 28, 32, 28)
         lay.setSpacing(0)
-        lay.addWidget(title)
         lay.addWidget(notice)
         lay.addSpacing(12)
-        lay.addWidget(rules_widget)
+        lay.addWidget(self._rules_scroll)
         lay.addWidget(agree_widget)
         lay.addWidget(self.msg)
         lay.addSpacing(8)
@@ -338,9 +339,38 @@ class ConsentWindow(GatewayWindow):
 
         self.setMinimumSize(700, 520)
 
+        self._rules_scroll.verticalScrollBar().valueChanged.connect(
+            self._on_consent_scroll)
+        self.agree.toggled.connect(self._on_agree_toggled)
         self.submitBtn.clicked.connect(self._submit)
+        QTimer.singleShot(0, self._check_consent_scroll)
+
+    def _on_consent_scroll(self, _value=None):
+        self._check_consent_scroll()
+
+    def _check_consent_scroll(self):
+        bar = self._rules_scroll.verticalScrollBar()
+        if bar.maximum() <= 0:
+            # Short text fits without scrolling — treat as fully read.
+            at_end = True
+        else:
+            at_end = bar.value() >= max(0, bar.maximum() - 4)
+        if at_end and not self._read_to_end:
+            self._read_to_end = True
+            self.agree.setEnabled(True)
+            self._agree_text.setStyleSheet("color: #e0e0e0;")
+            self.msg.setText("")
+            self.msg.setStyleSheet("color:#e06c6c;")
+            self._on_agree_toggled(self.agree.isChecked())
+
+    def _on_agree_toggled(self, checked):
+        self.submitBtn.setEnabled(bool(self._read_to_end and checked))
 
     def _submit(self):
+        if not self._read_to_end:
+            self.msg.setText(
+                "Please scroll to the end of the text before continuing.")
+            return
         if not self.agree.isChecked():
             self.msg.setText("You must check the agreement box to continue.")
             return
@@ -465,7 +495,7 @@ def _show_krita(qwin):
 
 
 def run_gateway(qwin):
-    """Run login (+ consent on session 1). Krita stays hidden the whole time.
+    """Run login. Krita stays hidden the whole time.
     Returns session info on success, or None if the participant quit."""
     try:
         os.makedirs(BASE_DIR, exist_ok=True)
@@ -477,20 +507,7 @@ def run_gateway(qwin):
             return None
         _log("login ok: %s" % info)
 
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        if info["session"] == 1:
-            try:
-                consent_win = ConsentWindow(load_consent())
-            except Exception:
-                _log("ConsentWindow failed:\n" + traceback.format_exc())
-                return None
-            ok = consent_win.run_blocking()
-            if not ok:
-                return None
-            info["consent_signed"] = True
-
-        info["started_at"] = ts
+        info["started_at"] = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
         _log("gateway completed: %s" % info)
         return info

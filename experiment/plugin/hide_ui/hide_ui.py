@@ -8,7 +8,8 @@ from krita import Krita, Extension
 from PyQt5.QtCore import (
     QTimer, Qt, QEvent, QPoint, QSize, QRect, QRectF, QPointF, QEventLoop,
     QByteArray)
-from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QPixmap, QTransform, QKeySequence
+from PyQt5.QtGui import (
+    QPainter, QColor, QPen, QIcon, QPixmap, QTransform, QKeySequence, QCursor)
 from PyQt5.QtWidgets import (
     QDockWidget, QLabel, QFrame, QToolButton, QWidget, QGridLayout, QSplitter,
     QApplication, QTreeWidget, QAbstractButton, QToolBar, QStackedWidget,
@@ -43,6 +44,12 @@ SKIP_LEARN_STYLE = (
     " padding: 2px 14px; background: #d8d8d8; border-radius: 4px; border: none; }"
     " QPushButton:hover { background: #c8c8c8; }"
     " QPushButton:pressed { background: #b8b8b8; }")
+NEXT_RECALL_STYLE = (
+    "QPushButton {"
+    " color: #ffffff; font-size: 16px; font-weight: bold;"
+    " padding: 2px 14px; background: #4a6fa5; border-radius: 4px; border: none; }"
+    " QPushButton:hover { background: #5a7fb5; }"
+    " QPushButton:pressed { background: #3a5f95; }")
 TIMER_URGENT_SEC = 5
 TIMER_BLINK_MS = 400
 RECALL_FEEDBACK_CORRECT = (
@@ -520,8 +527,10 @@ class HideUIExtension(Extension):
         self._recall_phase_time_sec = None
         self._recall_meta = {}
         self._recall_question_answered = False
+        self._recall_waiting_for_next = False
         self._recall_mask_state = []
         self._recall_question_banner = None
+        self._next_recall_btn = None
         self._recall_feedback_widgets = []
         self._recall_command_widgets = []
         self._recall_overlay_generation = 0
@@ -548,6 +557,7 @@ class HideUIExtension(Extension):
         self._recall_layout_profile_override = None
         self._learning_layout_profile = "A"
         self._learning_tracker = None
+        self._learning_pointer_timer = None
         self._learning_steps = None
         self._learning_step_index = 0
         self._learning_done_cb = None
@@ -565,13 +575,15 @@ class HideUIExtension(Extension):
         for name in (
                 "_apply_timer", "_tutorial_timer", "_recall_timer",
                 "_recall_phase_timer", "_timer_blink_timer", "_suppress_timer",
-                "_capture_timer"):
+                "_capture_timer", "_learning_pointer_timer"):
             timer = getattr(self, name, None)
             if timer is not None:
                 try:
                     timer.stop()
                 except Exception:
                     pass
+            if name == "_learning_pointer_timer":
+                setattr(self, name, None)
 
     def _pause_video_for_phase_change(self):
         try:
@@ -1393,6 +1405,7 @@ class HideUIExtension(Extension):
         self._study_layout_applied_sig = None
         self._study_layout_profile = "A"
         self._learning_tracker = None
+        self._stop_learning_pointer_poll()
         self._learning_steps = None
         self._recall_layout_profile_override = None
         self._invalidate_dock_cache()
@@ -1832,6 +1845,15 @@ class HideUIExtension(Extension):
                 self._skip_learn_btn.clicked.connect(self._on_skip_learning_click)
                 self._skip_learn_btn.installEventFilter(self)
                 bar_lay.addWidget(self._skip_learn_btn, 0, Qt.AlignVCenter)
+
+                self._next_recall_btn = QPushButton("Next question")
+                self._next_recall_btn.setStyleSheet(NEXT_RECALL_STYLE)
+                self._next_recall_btn.setToolTip(
+                    "Continue to the next recall question")
+                self._next_recall_btn.hide()
+                self._next_recall_btn.clicked.connect(self._on_next_recall_click)
+                self._next_recall_btn.installEventFilter(self)
+                bar_lay.addWidget(self._next_recall_btn, 0, Qt.AlignVCenter)
 
                 self._timer_label = QLabel("")
                 self._timer_label.setFocusPolicy(Qt.NoFocus)
@@ -3746,8 +3768,60 @@ class HideUIExtension(Extension):
                 if show:
                     self._skip_learn_btn.setToolTip(
                         "Experimenter: skip this recall phase (password required)")
+            if not visible:
+                self._set_next_recall_visible(False)
         except Exception:
             _log(traceback.format_exc())
+
+    def _set_next_recall_visible(self, visible, is_last=False):
+        try:
+            if self._next_recall_btn is None:
+                return
+            show = bool(visible)
+            if show:
+                self._next_recall_btn.setText(
+                    "Continue" if is_last else "Next question")
+            self._next_recall_btn.setVisible(show)
+            if show:
+                self._next_recall_btn.raise_()
+        except Exception:
+            _log(traceback.format_exc())
+
+    def _prompt_next_recall_question(self, qwin):
+        """Pause after an answer/timeout until the participant clicks Next."""
+        if self._quitting or not self._recall_active:
+            return
+        self._recall_waiting_for_next = True
+        if self._recall_timer is not None:
+            self._recall_timer.stop()
+        self._set_recall_timer_visible(False)
+        is_last = self._recall_index >= len(self._recall_questions) - 1
+        self._set_next_recall_visible(True, is_last=is_last)
+        banner = self._ensure_recall_question_banner(qwin)
+        if banner is not None:
+            if is_last:
+                banner.set_question(
+                    "Answer recorded. Click Continue when you are ready.")
+            else:
+                banner.set_question(
+                    "Answer recorded. Click Next question when you are ready.")
+            banner.show()
+            self._position_recall_question_banner(qwin)
+        _log("recall waiting for Next question (index=%d last=%s)"
+             % (self._recall_index, is_last))
+
+    def _on_next_recall_click(self):
+        if self._quitting or not self._recall_active:
+            return
+        if not self._recall_waiting_for_next:
+            return
+        self._recall_waiting_for_next = False
+        self._set_next_recall_visible(False)
+        qwin = self._qwin
+        if not _qt_alive(qwin):
+            return
+        _log("recall Next question clicked -> advancing")
+        self._advance_recall_question(qwin)
 
     def _learning_skip_password(self, learn_num):
         from .session_flow import learning_skip_password
@@ -3807,8 +3881,10 @@ class HideUIExtension(Extension):
         if self._quitting or not self._recall_active:
             return
         self._recall_question_answered = True
+        self._recall_waiting_for_next = False
         if self._recall_timer is not None:
             self._recall_timer.stop()
+        self._set_next_recall_visible(False)
         self._set_skip_recall_visible(False)
         self._set_recall_timer_visible(False)
         self._recall_end_reason = "experimenter_skip"
@@ -3947,6 +4023,7 @@ class HideUIExtension(Extension):
                 learn_num, inst.get("phase", 1), inst.get("steps", []))
             self._ensure_learning_click_hooks(qwin)
             self._ensure_text_app_filter()
+            self._start_learning_pointer_poll()
         except Exception:
             _log(traceback.format_exc())
 
@@ -4015,10 +4092,129 @@ class HideUIExtension(Extension):
 
     def _stop_learning_event_tracking(self, learn_num=0):
         try:
+            self._stop_learning_pointer_poll()
             if self._learning_tracker is not None:
                 self._learning_tracker.stop()
         except Exception:
             _log(traceback.format_exc())
+
+    def _start_learning_pointer_poll(self):
+        self._stop_learning_pointer_poll()
+        self._learning_pointer_timer = QTimer()
+        self._learning_pointer_timer.timeout.connect(self._poll_learning_pointer)
+        self._learning_pointer_timer.start(10)
+
+    def _stop_learning_pointer_poll(self):
+        if self._learning_pointer_timer is not None:
+            self._learning_pointer_timer.stop()
+            self._learning_pointer_timer = None
+
+    def _poll_learning_pointer(self):
+        if not self._learning_click_active():
+            return
+        tracker = self._learning_tracker
+        if tracker is None:
+            return
+        try:
+            gp = QCursor.pos()
+            x = gp.x()
+            y = gp.y()
+            if self._qwin_alive():
+                local = self._qwin.mapFromGlobal(gp)
+                x = local.x()
+                y = local.y()
+            tracker.on_pointer_event("move", x, y, "")
+        except Exception:
+            pass
+
+    def _qt_mouse_button_name(self, button):
+        if button == Qt.LeftButton:
+            return "left"
+        if button == Qt.RightButton:
+            return "right"
+        if button == Qt.MiddleButton:
+            return "middle"
+        try:
+            return str(int(button))
+        except Exception:
+            return ""
+
+    def _describe_learning_click_target(self, obj):
+        """Human-readable target under a learning-phase mouse click."""
+        if not isinstance(obj, QWidget):
+            return ""
+        try:
+            from .learning_tracker import toolbox_command_name
+            w = obj
+            while w is not None:
+                name = w.objectName() or ""
+                cls = w.metaObject().className() if w.metaObject() else ""
+
+                if name in ("bnDelete", "bnRaise", "bnLower"):
+                    labels = {
+                        "bnDelete": "Delete layer",
+                        "bnRaise": "Move up",
+                        "bnLower": "Move down",
+                    }
+                    return labels.get(name, name)
+
+                tool = toolbox_command_name(name)
+                if tool:
+                    return tool
+
+                if isinstance(w, QToolButton):
+                    tip = (w.toolTip() or w.text() or "").strip()
+                    if tip:
+                        return tip.split("\n")[0].strip()
+
+                if self._widget_in_docker(w, "ColorSelectorNg"):
+                    return "color wheel"
+                if self._widget_in_docker(w, "PresetDocker"):
+                    return "Brush Presets"
+                if (self._preset_popup_widget is not None
+                        and _qt_alive(self._preset_popup_widget)):
+                    p = w
+                    while p is not None:
+                        if p is self._preset_popup_widget:
+                            return "Brush Presets"
+                        p = _widget_parent(p)
+                if self._widget_in_docker(w, "KisLayerBox"):
+                    if name == "bnAdd":
+                        return "Add layer"
+                    return "Layers"
+                if self._widget_in_docker(w, "ToolBox"):
+                    return "ToolBox"
+                if "Canvas" in cls or w is self._canvas_w:
+                    return "canvas"
+                if isinstance(w, QDockWidget) and name:
+                    return name
+                w = _widget_parent(w)
+
+            name = obj.objectName() or ""
+            cls = obj.metaObject().className() if obj.metaObject() else ""
+            return name or cls or "widget"
+        except Exception:
+            return ""
+
+    def _log_learning_pointer_click(self, event_type, event, obj=None):
+        if not self._learning_click_active():
+            return
+        tracker = self._learning_tracker
+        if tracker is None:
+            return
+        try:
+            gp = event.globalPos()
+            x = gp.x()
+            y = gp.y()
+            if self._qwin_alive():
+                local = self._qwin.mapFromGlobal(gp)
+                x = local.x()
+                y = local.y()
+            target = self._describe_learning_click_target(obj) if obj else ""
+            tracker.on_pointer_event(
+                event_type, x, y, target)
+        except Exception:
+            pass
 
     def _refresh_learning_step_panel(self, qwin=None):
         if not self._learning_steps:
@@ -5141,7 +5337,7 @@ class HideUIExtension(Extension):
         if isinstance(obj, QWidget):
             w = obj
             while w is not None:
-                if w is self._skip_learn_btn or w is self._timer_label:
+                if w is self._skip_learn_btn or w is self._next_recall_btn or w is self._timer_label:
                     return True
                 if w is self._study_toolbar or w.objectName() == STUDY_CHROME_TOOLBAR:
                     return True
@@ -5151,8 +5347,9 @@ class HideUIExtension(Extension):
                     return True
                 w = _widget_parent(w)
         for w in (
-                self._skip_learn_btn, self._timer_label, self._study_toolbar,
-                self._finish_btn, self._close_btn, self._recall_question_banner):
+                self._skip_learn_btn, self._next_recall_btn, self._timer_label,
+                self._study_toolbar, self._finish_btn, self._close_btn,
+                self._recall_question_banner):
             if w is not None and _qt_alive(w) and self._global_hit(w, global_pos):
                 return True
         return False
@@ -5343,8 +5540,11 @@ class HideUIExtension(Extension):
             return
         if self._recall_timer is not None:
             self._recall_timer.stop()
+        self._recall_waiting_for_next = False
+        self._set_next_recall_visible(False)
         if (not self._recall_question_answered
                 and self._recall_index < len(self._recall_questions)):
+            self._recall_question_answered = True
             self._record_recall_answer(None, False, timeout=True)
         _log("recall phase time limit reached")
         self._finish_recall_phase(qwin)
@@ -5392,6 +5592,8 @@ class HideUIExtension(Extension):
         question = self._recall_questions[self._recall_index]
         self._recall_overlay_generation += 1
         self._recall_question_answered = False
+        self._recall_waiting_for_next = False
+        self._set_next_recall_visible(False)
         self._clear_recall_feedback()
         self._show_recall_question(qwin, question)
         self._recall_question_shown_ms = int(time.time() * 1000)
@@ -5422,8 +5624,10 @@ class HideUIExtension(Extension):
             if self._recall_remaining_sec <= 0:
                 self._recall_timer.stop()
                 if not self._recall_question_answered:
+                    self._recall_question_answered = True
+                    self._recall_overlay_generation += 1
                     self._record_recall_answer(None, False, timeout=True)
-                    self._advance_recall_question(qwin)
+                    self._prompt_next_recall_question(qwin)
 
         self._recall_timer = QTimer()
         self._recall_timer.timeout.connect(tick)
@@ -5466,7 +5670,7 @@ class HideUIExtension(Extension):
             w = _widget_parent(w)
         return None
 
-    def _on_recall_click(self, widget, cmd_id, overlay=None):
+    def _on_recall_click(self, widget, cmd_id, overlay=None, click_global=None):
         if self._recall_question_answered or self._quitting or not self._recall_active:
             return
         if self._recall_index >= len(self._recall_questions):
@@ -5481,11 +5685,43 @@ class HideUIExtension(Extension):
         _log("recall click q=%s clicked=%s expected=%s correct=%s" % (
             question["id"], cmd_id, question["answer"], correct))
         self._show_recall_feedback(widget, correct, overlay=overlay)
-        self._record_recall_answer(cmd_id, correct, timeout=False)
-        QTimer.singleShot(
-            700, lambda q=self._qwin: self._advance_recall_question(q))
+        click_xy = None
+        if click_global is not None:
+            try:
+                click_xy = (int(click_global.x()), int(click_global.y()))
+            except Exception:
+                click_xy = None
+        self._record_recall_answer(
+            cmd_id, correct, timeout=False, click_xy=click_xy)
+        self._prompt_next_recall_question(self._qwin)
 
-    def _record_recall_answer(self, clicked_cmd, correct, timeout=False):
+    def _collect_recall_overlay_geometry(self, qwin=None):
+        """List visible recall overlays with global centers for error metrics."""
+        qwin = qwin or self._qwin
+        if not _qt_alive(qwin):
+            return []
+        items = []
+        try:
+            for ov in qwin.findChildren(QWidget, RECALL_OVERLAY_NAME):
+                if not _qt_alive(ov) or not ov.isVisible():
+                    continue
+                cmd = ov.property("hideui_recall_cmd")
+                if not cmd:
+                    continue
+                center = ov.mapToGlobal(ov.rect().center())
+                items.append({
+                    "cmd_id": str(cmd),
+                    "cx": int(center.x()),
+                    "cy": int(center.y()),
+                    "w": int(ov.width()),
+                    "h": int(ov.height()),
+                })
+        except Exception:
+            _log(traceback.format_exc())
+        return items
+
+    def _record_recall_answer(self, clicked_cmd, correct, timeout=False,
+                              click_xy=None):
         if self._recall_index >= len(self._recall_questions):
             return
         question = self._recall_questions[self._recall_index]
@@ -5495,7 +5731,30 @@ class HideUIExtension(Extension):
             time_taken_ms = max(0, answered_ms - shown_ms)
         else:
             time_taken_ms = 0
-        self._recall_results.append({
+        error = {
+            "slot_offset_x": "",
+            "slot_offset_y": "",
+            "slot_distance": "",
+            "pixel_offset_x": "",
+            "pixel_offset_y": "",
+            "pixel_distance": "",
+        }
+        if clicked_cmd and not timeout:
+            try:
+                from .recall_test import compute_recall_click_error
+                overlays = self._collect_recall_overlay_geometry()
+                cx = cy = None
+                if click_xy is not None:
+                    cx, cy = click_xy
+                error = compute_recall_click_error(
+                    overlays,
+                    question.get("answer"),
+                    clicked_cmd,
+                    click_x=cx,
+                    click_y=cy)
+            except Exception:
+                _log(traceback.format_exc())
+        result = {
             "question_id": question["id"],
             "prompt": question["prompt"],
             "expected": question["answer"],
@@ -5506,7 +5765,9 @@ class HideUIExtension(Extension):
             "presented_ms": shown_ms,
             "answered_ms": answered_ms,
             "time_taken_ms": time_taken_ms,
-        })
+        }
+        result.update(error)
+        self._recall_results.append(result)
         from .experiment_log import log_t
         log_t(
             "recall",
@@ -5516,7 +5777,8 @@ class HideUIExtension(Extension):
             correct=bool(correct),
             clicked=str(clicked_cmd or ""),
             timeout=bool(timeout),
-            time_taken_ms=time_taken_ms)
+            time_taken_ms=time_taken_ms,
+            **error)
 
     def _advance_recall_question(self, qwin):
         if self._quitting:
@@ -5724,8 +5986,8 @@ class HideUIExtension(Extension):
             if modal is not None and w is modal:
                 return True
             if w in (
-                    self._skip_learn_btn, self._timer_label, self._finish_btn,
-                    self._close_btn, self._recall_question_banner):
+                    self._skip_learn_btn, self._next_recall_btn, self._timer_label,
+                    self._finish_btn, self._close_btn, self._recall_question_banner):
                 return True
             if w.objectName() in (STUDY_CHROME_TOOLBAR, RECALL_QUESTION_NAME):
                 return True
@@ -5782,6 +6044,7 @@ class HideUIExtension(Extension):
             return
         try:
             self._recall_active = False
+            self._recall_waiting_for_next = False
             self._recall_panel_message = None
             self._stop_recall_click_capture()
             if self._recall_timer is not None:
@@ -5789,6 +6052,7 @@ class HideUIExtension(Extension):
             if self._recall_phase_timer is not None:
                 self._recall_phase_timer.stop()
             self._set_recall_timer_visible(False)
+            self._set_next_recall_visible(False)
             self._set_skip_recall_visible(False)
             self._hide_recall_question(qwin)
             self._clear_recall_feedback()
@@ -5799,25 +6063,19 @@ class HideUIExtension(Extension):
             total_q = len(self._recall_questions or [])
             phase_skipped = (
                 getattr(self, "_recall_end_reason", "ended") == "experimenter_skip")
+            end_reason = getattr(self, "_recall_end_reason", "ended")
             from .experiment_log import finalize_recall_block, log_e
             self._recall_results = finalize_recall_block(
                 self._recall_questions,
                 self._recall_results,
-                phase_skipped=phase_skipped)
+                phase_skipped=phase_skipped,
+                block_end_reason=end_reason)
             score_pct = recall_score_percent(self._recall_results, total_q)
-            correct_count = sum(1 for r in self._recall_results if r.get("correct"))
-            answered_count = sum(
-                1 for r in self._recall_results
-                if not r.get("unanswered") and not r.get("phase_skipped"))
             log_e(
                 "recall",
                 action="end",
                 learn_num=int(getattr(self, "_pending_recall_learn_num", 0) or 0),
-                question_count=total_q,
-                answered_count=answered_count,
-                correct_count=correct_count,
-                score_percent=score_pct,
-                reason=getattr(self, "_recall_end_reason", "ended"))
+                reason=end_reason)
             self._recall_end_reason = "ended"
             self._recall_skip_save = False
             self._recall_layout_profile_override = None
@@ -5939,8 +6197,9 @@ class HideUIExtension(Extension):
             label="break", layout_after=layout)
 
     def _start_break_window(self, qwin, after_fn, ok):
-        from .session_flow import run_timed_break, break_skip_password
+        from .session_flow import run_timed_break, break_skip_password, BREAK_SEC
         from .video_panel import suspend_playback_for_phase_change
+        from .experiment_log import log_e
         if self._quitting:
             return
         if not ok:
@@ -5957,9 +6216,20 @@ class HideUIExtension(Extension):
                 self.session.get("condition", "A"),
                 self.session.get("session", 1),
                 learn_num)
-        if not run_timed_break(skip_password=skip_pwd):
+        log_e(
+            "break",
+            action="start",
+            learn_num=int(learn_num or 0),
+            duration_sec=BREAK_SEC)
+        ok, break_reason = run_timed_break(skip_password=skip_pwd)
+        if not ok:
             self._request_quit(force=True)
             return
+        log_e(
+            "break",
+            action="end",
+            learn_num=int(learn_num or 0),
+            reason=break_reason or "completed")
         if after_fn is not None:
             after_fn(qwin)
 
@@ -6067,7 +6337,7 @@ class HideUIExtension(Extension):
                 "body": (
                     "Nice work.\n\n"
                     "When you press Continue, you will take a short recall test, "
-                    "then a break, then the final survey."),
+                    "then a short survey, then a break, then the final survey."),
             }
 
         def after_learn():
@@ -6082,17 +6352,29 @@ class HideUIExtension(Extension):
             learn_num=which, layout_after=target_profile)
 
     def _session2_after_tutorial_recall(self, qwin):
-        def after_break(q):
-            self._session_tutorial_index += 1
-            self._session2_next_tutorial(q)
+        learn_num = int(getattr(self, "_pending_recall_learn_num", 0) or 0) \
+            or (self._session_tutorial_index + 1)
 
-        self._run_break(
-            qwin, after_break, learn_num=self._session_tutorial_index + 1)
+        def after_survey(_responses=None):
+            def after_break(q):
+                self._session_tutorial_index += 1
+                self._session2_next_tutorial(q)
+
+            self._run_break(
+                qwin, after_break, learn_num=learn_num)
+
+        self._pause_session_ui(qwin)
+        from .survey import run_post_recall_survey
+        responses = run_post_recall_survey(learn_num=learn_num)
+        if responses is None:
+            self._request_quit(force=True)
+            return
+        after_survey(responses)
 
     def _session2_finish_survey(self, qwin):
         self._pause_session_ui(qwin)
-        from .survey import run_session_survey
-        if run_session_survey() is None:
+        from .survey import run_final_session_survey
+        if run_final_session_survey() is None:
             self._request_quit(force=True)
             return
         from .session_flow import run_session_complete
@@ -6294,14 +6576,24 @@ class HideUIExtension(Extension):
 
         if (self._learning_click_active()
                 and isinstance(obj, QWidget)
-                and event.type() == QEvent.MouseButtonRelease
-                and event.button() == Qt.LeftButton):
-            layer_name = obj.objectName() or ""
-            if (layer_name in ("bnDelete", "bnRaise", "bnLower")
-                    and self._widget_in_docker(obj, "KisLayerBox")):
-                self._log_learning_layer_button(layer_name)
-            elif self._widget_in_docker(obj, "ColorSelectorNg"):
-                self._log_learning_color_clicked()
+                and event.type() in (
+                    QEvent.MouseButtonPress,
+                    QEvent.MouseButtonRelease,
+                    QEvent.MouseButtonDblClick)):
+            etype = {
+                QEvent.MouseButtonPress: "press",
+                QEvent.MouseButtonRelease: "release",
+                QEvent.MouseButtonDblClick: "dblclick",
+            }.get(event.type(), "click")
+            self._log_learning_pointer_click(etype, event, obj)
+            if (event.type() == QEvent.MouseButtonRelease
+                    and event.button() == Qt.LeftButton):
+                layer_name = obj.objectName() or ""
+                if (layer_name in ("bnDelete", "bnRaise", "bnLower")
+                        and self._widget_in_docker(obj, "KisLayerBox")):
+                    self._log_learning_layer_button(layer_name)
+                elif self._widget_in_docker(obj, "ColorSelectorNg"):
+                    self._log_learning_color_clicked()
 
         if (self._recall_active
                 and event.type() in (
@@ -6318,7 +6610,8 @@ class HideUIExtension(Extension):
                 return False
             cmd_id, target, overlay = self._recall_overlay_at(event.globalPos())
             if cmd_id is not None:
-                self._on_recall_click(target or obj, cmd_id, overlay)
+                self._on_recall_click(
+                    target or obj, cmd_id, overlay, click_global=event.globalPos())
                 return True
 
         if obj is self._skip_learn_btn and self._recall_active:

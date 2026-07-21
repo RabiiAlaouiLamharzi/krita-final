@@ -1,28 +1,15 @@
-CONSENT TO PARTICIPATE IN RESEARCH
+You are invited to take part in a research study on how people learn tools and buttons in a drawing program. The study is conducted by the Loop team (Inria Center at the University of Lille).
 
-Study: Impact of changing the spatial configuration of commands on the
-learning of software features.
-Team: LOKI - Inria Centre at the University of Lille.
+The study has two online sessions. Each session lasts about 60 minutes. The sessions take place roughly 48 hours apart.
 
-What you will do:
-You will use a simplified version of the Krita drawing software to perform
-a set of guided tasks. At certain points you will be asked to recall and
-click on the location of specific commands as quickly as possible, and to
-answer short questionnaires. The session is conducted remotely while you
-share your screen with the experimenter.
+The sessions are conducted remotely. You will share your screen with the experimenter. The experimenter will guide you through the steps, answer questions about the procedure, and help if something on screen looks unexpected.
 
-Data:
-Only quantitative interaction data is collected (timings, clicks, accuracy,
-questionnaire answers) together with this signed consent. No sensitive or
-medical data is collected. Your data is pseudonymised behind your
-participant ID.
+In each session, you will use a simplified version of the "Krita" drawing program on your computer. First, you will complete short guided tasks to learn a set of tools and panels. Then, these commands will be hidden behind white boxes, and you will be asked to locate and click them as quickly and accurately as possible. This allows us to measure your spatial memory and how well you remember the location of Krita commands.
 
-Voluntary participation:
-Participation is voluntary and unpaid. You may stop at any time without
-giving a reason.
+In Session 2, we will modify the Krita interface layout. This change is a key part of the study, as we intend to understand how you adapt to new interface arrangements.
 
-By signing below, you confirm that you have read and understood the above
-and that you agree to participate.
+During the experiment, we will collect quantitative interaction data, including task completion times, clicks, and response accuracy. You may also be asked to complete short surveys, including both open-ended questions and Likert-scale items. We will record this qualitative feedback as well. No sensitive, medical, or financial information will be collected.
 
-(This is placeholder text - edit consent.txt in the plugin folder to use
-your final approved consent wording.)
+Participation is voluntary and unpaid. You may stop at any time without giving a reason and without any negative consequence. If you decide to stop, please tell the experimenter. You can also ask questions about the study before you agree to take part.
+
+By agreeing below, you confirm that you have read and understood this information and that you agree to participate under the conditions described here.
