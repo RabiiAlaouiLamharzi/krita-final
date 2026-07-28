@@ -60,6 +60,16 @@ cat > "$STAGE/Launch Study.command" <<'EOF'
 set -euo pipefail
 cd "$(cd "$(dirname "$0")" && pwd)"
 export KRITA_APP="$(pwd)/Krita.app"
+
+# macOS marks downloaded apps with a quarantine flag. Gatekeeper then often
+# shows "Krita is damaged and can't be opened" for unsigned/repacked builds.
+# Clearing quarantine is required for remote-session distribution without
+# Apple notarization.
+echo "Preparing Krita (clearing macOS download quarantine)…"
+xattr -cr "$KRITA_APP" 2>/dev/null || true
+xattr -cr "$(pwd)/Launch Study.command" 2>/dev/null || true
+xattr -cr "$(pwd)/study-pack" 2>/dev/null || true
+
 echo "Installing study plugin…"
 bash "$(pwd)/study-pack/install-mac.sh"
 echo ""
@@ -74,10 +84,19 @@ Krita version: ${KRITA_VERSION}
 
 HOW TO START
 1. Keep this whole folder together (do not move only Krita.app).
-2. Double-click "Launch Study.command".
-3. If macOS blocks it: Right-click → Open → Open.
-4. Enter the Participant ID, Condition, Session, and password
+2. Double-click "Launch Study.command" (not Krita.app alone).
+3. If macOS blocks the .command: Right-click → Open → Open.
+4. Do NOT open Krita.app directly from Finder after download —
+   macOS may say it is "damaged". Always use Launch Study.command
+   (it clears that block automatically).
+5. Enter the Participant ID, Condition, Session, and password
    your experimenter sent you.
+
+IF YOU ALREADY SAW "damaged"
+- Open Terminal, drag this folder into the window after typing:
+  xattr -cr
+  (space after cr, then drop the folder, press Enter)
+- Then run Launch Study.command again.
 
 NOTES
 - First launch installs the study plugin into your Krita profile.
