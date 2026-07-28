@@ -35,6 +35,13 @@ mkdir -p "$STAGE"
 
 echo "Copying Krita.app (this can take a few minutes)…"
 ditto "$SRC_APP" "$STAGE/Krita.app"
+# Upstream notarized signature breaks after redistribution (Gatekeeper:
+# "damaged"). Ad-hoc resign at build time; Launch Study also re-signs on first run.
+if command -v codesign >/dev/null 2>&1; then
+  echo "Ad-hoc signing Krita.app for redistribution…"
+  codesign --force --deep --sign - "$STAGE/Krita.app" || true
+fi
+xattr -cr "$STAGE/Krita.app" 2>/dev/null || true
 
 echo "Copying study pack…"
 mkdir -p "$STAGE/study-pack"
@@ -61,20 +68,34 @@ set -euo pipefail
 cd "$(cd "$(dirname "$0")" && pwd)"
 export KRITA_APP="$(pwd)/Krita.app"
 
-# macOS marks downloaded apps with a quarantine flag. Gatekeeper then often
-# shows "Krita is damaged and can't be opened" for unsigned/repacked builds.
-# Clearing quarantine is required for remote-session distribution without
-# Apple notarization.
-echo "Preparing Krita (clearing macOS download quarantine)…"
+# Downloaded / repackaged Krita.app often fails Gatekeeper with a false
+# "Krita is damaged" dialog: quarantine + the original developer signature
+# no longer verifies after redistribution. Fix: strip quarantine, then
+# replace the signature with a local ad-hoc one, then launch.
+echo "Preparing Krita for this Mac…"
+echo "  (clearing download quarantine)"
 xattr -cr "$KRITA_APP" 2>/dev/null || true
-xattr -cr "$(pwd)/Launch Study.command" 2>/dev/null || true
-xattr -cr "$(pwd)/study-pack" 2>/dev/null || true
+xattr -cr "$(pwd)" 2>/dev/null || true
+
+if command -v codesign >/dev/null 2>&1; then
+  echo "  (re-signing app for Gatekeeper — may take a minute)"
+  codesign --force --deep --sign - "$KRITA_APP" 2>/dev/null \
+    || codesign --force --sign - "$KRITA_APP" 2>/dev/null \
+    || echo "  warning: codesign failed; trying to launch anyway"
+  xattr -cr "$KRITA_APP" 2>/dev/null || true
+fi
 
 echo "Installing study plugin…"
 bash "$(pwd)/study-pack/install-mac.sh"
 echo ""
 echo "Starting Krita Study…"
-open "$KRITA_APP" --args -nosplash
+# Launch the binary directly to avoid Finder re-checking a stale quarantine state.
+KRITA_BIN="$KRITA_APP/Contents/MacOS/krita"
+if [ -x "$KRITA_BIN" ]; then
+  exec "$KRITA_BIN" -nosplash
+else
+  open "$KRITA_APP" --args -nosplash
+fi
 EOF
 chmod +x "$STAGE/Launch Study.command"
 
@@ -83,26 +104,22 @@ Krita UI Learning Study — macOS
 Krita version: ${KRITA_VERSION}
 
 HOW TO START
-1. Keep this whole folder together (do not move only Krita.app).
-2. Double-click "Launch Study.command" (not Krita.app alone).
+1. Keep this whole folder together (do not open Krita.app alone).
+2. Double-click "Launch Study.command".
 3. If macOS blocks the .command: Right-click → Open → Open.
-4. Do NOT open Krita.app directly from Finder after download —
-   macOS may say it is "damaged". Always use Launch Study.command
-   (it clears that block automatically).
-5. Enter the Participant ID, Condition, Session, and password
-   your experimenter sent you.
+4. Wait while it prepares/re-signs Krita (first launch only), then the study opens.
+5. Enter Participant ID, Condition, Session, and password from your experimenter.
 
-IF YOU ALREADY SAW "damaged"
-- Open Terminal, drag this folder into the window after typing:
-  xattr -cr
-  (space after cr, then drop the folder, press Enter)
-- Then run Launch Study.command again.
+IF YOU STILL SEE "damaged"
+Open Terminal and run (drag the KritaStudy-macOS folder after the space):
+  xattr -cr 
+  codesign --force --deep --sign - /path/to/KritaStudy-macOS/Krita.app
+Then double-click Launch Study.command again.
 
 NOTES
 - First launch installs the study plugin into your Krita profile.
-- This changes your normal Krita settings while the study plugin is enabled.
-- No tutorial videos are included; the right panel uses text and images.
-- Need help? Contact your experimenter / research team.
+- This is an unsigned research build (not from the Mac App Store).
+- No tutorial videos; right panel uses text and images.
 
 Source: https://github.com/RabiiAlaouiLamharzi/krita-final
 EOF
