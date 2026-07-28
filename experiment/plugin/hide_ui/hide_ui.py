@@ -1653,16 +1653,9 @@ class HideUIExtension(Extension):
                 self._video_shown_for_canvas = False
                 panel.hide_panel()
                 return
-            layout = self._compute_layout(qwin)
-            if not self._video_shown_for_canvas or not panel.isVisible():
-                self._video_shown_for_canvas = True
-                panel.show_at(layout["video_pos"], layout["video_size"])
-            else:
-                panel.reposition(layout["video_pos"], layout["video_size"])
-            if getattr(self, "_video_restart_pending", False):
-                self._video_restart_pending = False
-                QTimer.singleShot(400, panel.restart_playback)
-            QTimer.singleShot(200, lambda: self._focus_canvas(qwin))
+            # Video playback disabled for study packages (no ffmpeg).
+            self._video_shown_for_canvas = False
+            panel.hide_panel()
         except Exception:
             _log(traceback.format_exc())
 

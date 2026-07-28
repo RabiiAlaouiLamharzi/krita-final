@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Krita UI Learning Study</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e8eef5;
+      --muted: #9aabbc;
+      --accent: #4a6fa5;
+      --accent-hover: #5a7fb5;
+      --line: #2a3648;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, #1e2a3d, var(--bg));
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 12px;
+    }
+    .lead {
+      color: var(--muted);
+      font-size: 1.05rem;
+      margin: 0 0 32px;
+    }
+    .downloads {
+      display: grid;
+      gap: 14px;
+      margin: 28px 0 36px;
+    }
+    a.btn {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 650;
+      font-size: 1.05rem;
+      padding: 16px 20px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+    }
+    a.btn:hover { background: var(--accent-hover); }
+    a.btn.secondary {
+      background: transparent;
+      border-color: var(--line);
+      color: var(--text);
+    }
+    a.btn.secondary:hover { border-color: var(--accent); color: #fff; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 20px 22px;
+      margin-bottom: 16px;
+    }
+    section h2 {
+      margin: 0 0 10px;
+      font-size: 1.05rem;
+    }
+    ol, ul { margin: 0; padding-left: 1.2rem; color: var(--muted); }
+    li { margin: 6px 0; }
+    .meta {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-top: 24px;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9em;
+      background: #0c1016;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Krita UI Learning Study</h1>
+    <p class="lead">
+      Download the study build for your computer, open it, and log in with the
+      credentials your experimenter sent you. Same study software on macOS and Windows
+      (Krita&nbsp;5.3.2).
+    </p>
+
+    <div class="downloads">
+      <a class="btn" id="dl-mac" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/latest">
+        Download for macOS
+      </a>
+      <a class="btn secondary" id="dl-win" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/latest">
+        Download for Windows
+      </a>
+    </div>
+
+    <section>
+      <h2>How to run</h2>
+      <ol>
+        <li>Download the zip for your OS from the latest release.</li>
+        <li>Unzip. Keep the folder together.</li>
+        <li><strong>Mac:</strong> double-click <code>Launch Study.command</code>
+          (if blocked: Right-click → Open).</li>
+        <li><strong>Windows:</strong> double-click <code>Launch Study.bat</code>
+          (if SmartScreen appears: More info → Run anyway).</li>
+        <li>Enter Participant ID, Condition, Session, and password from your experimenter.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>What you get</h2>
+      <ul>
+        <li>Krita with the study plugin already packaged</li>
+        <li>Full session flow (learning, recall, surveys) — text and images on the right panel</li>
+        <li>No ffmpeg / no tutorial videos in this package</li>
+      </ul>
+    </section>
+
+    <p class="meta">
+      Source code:
+      <a href="https://github.com/RabiiAlaouiLamharzi/krita-final" style="color:#8eb4e8">
+        github.com/RabiiAlaouiLamharzi/krita-final
+      </a>
+      · Builds are attached to
+      <a href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases" style="color:#8eb4e8">
+        Releases
+      </a>.
+      After each new release, prefer the assets named
+      <code>KritaStudy-macOS-*.zip</code> and
+      <code>KritaStudy-Windows-*.zip</code>.
+    </p>
+  </main>
+  <script>
+    // Prefer direct asset links when a latest release publishes named zips.
+    fetch("https://api.github.com/repos/RabiiAlaouiLamharzi/krita-final/releases/latest")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !data.assets) return;
+        data.assets.forEach(function (a) {
+          if (/KritaStudy-macOS/i.test(a.name)) {
+            document.getElementById("dl-mac").href = a.browser_download_url;
+          }
+          if (/KritaStudy-Windows/i.test(a.name)) {
+            document.getElementById("dl-win").href = a.browser_download_url;
+          }
+        });
+      })
+      .catch(function () {});
+  </script>
+</body>
+</html>

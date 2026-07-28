@@ -14,6 +14,9 @@ experiment/media/test.mov
 # Bundled ffmpeg binaries (reinstall locally if needed)
 experiment/plugin/hide_ui/bin/
 
+# Built participant zips / downloaded Krita cache
+experiment/dist/out/
+
 # Participant runtime data
 experiment/participant_data/
 experiment/analysis/

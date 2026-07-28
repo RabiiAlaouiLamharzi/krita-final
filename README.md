@@ -1,16 +1,20 @@
 # krita-final (study experiment)
 
-Snapshot saved **2026-07-06** — video-tutorial version with layout profiles, loading screen, recall fixes, and brush-preset panel polish.
+Krita UI learning study — plugin + packaging for **macOS** and **Windows** participant downloads.
 
-## What's in this version
+**Standard Krita version: 5.3.2** (same minor on both platforms).
 
-- Layout profiles A / A_C1 / A_C1_C2 / B with session-2 condition mapping
-- Loading overlay during canvas prep and UI setup (no artificial delay)
-- Brush preset panel gap fix for Layout A
-- Recall layout matching learning layouts
-- Clean Krita quit (`os._exit`) and toolbox ordering
+## Participant download (recommended)
 
-## Install (macOS)
+1. Open the [download page](https://rabiialaouilamharzi.github.io/krita-final/) (GitHub Pages) **or** [Releases](https://github.com/RabiiAlaouiLamharzi/krita-final/releases)
+2. Download **KritaStudy-macOS-*.zip** or **KritaStudy-Windows-*.zip**
+3. Unzip → double-click **Launch Study** → log in with experimenter credentials
+
+See [experiment/dist/README.md](experiment/dist/README.md) to build those zips.
+
+## Developer install (plugin only)
+
+### macOS
 
 ```bash
 cd experiment
@@ -18,16 +22,16 @@ bash install-mac.sh
 open -a /Applications/krita.app --args -nosplash
 ```
 
-Krita loads the plugin from `~/Library/Application Support/krita/pykrita/hide_ui/`.
+### Windows
 
-## Media
-
-Tutorial `.mov` files are **not** in git (too large). Place them under `experiment/media/` locally. Smaller `.mp4` files may be included.
-
-## Restore this version
-
-```bash
-git clone https://github.com/RabiiAlaouiLamharzi/krita-final.git
-cd krita-final/experiment
-bash install-mac.sh
+```powershell
+cd experiment
+powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
+# then start krita.exe -nosplash
 ```
+
+## Notes
+
+- Right panel uses **text + step images** only (`STUDY_USE_VIDEO = False`). No ffmpeg.
+- Plain-text passwords stay local (`passwords_plain.json` is gitignored). Hashed `passwords.json` ships in the pack.
+- Tutorial videos are not included.

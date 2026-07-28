@@ -18,6 +18,9 @@ CONTROLS_H = 52
 LOG = os.path.expanduser("~/krita_hide_ui_log.txt")
 VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".webm")
 INTRO_CONTINUE_UNLOCK_SEC = 60
+# Study packages ship without ffmpeg / tutorial videos — right panel is
+# text + step images only (learning, recall, breaks).
+STUDY_USE_VIDEO = False
 
 _PANEL = None
 _SHUTTING_DOWN = False
@@ -66,7 +69,8 @@ def get_video_panel():
     if _PANEL is None:
         _kill_stale_mpv()
         _PANEL = VideoPanelWindow()
-        _log("video panel: created singleton (ffmpeg backend)")
+        _log("video panel: created singleton (text/images only, video=%s)"
+             % STUDY_USE_VIDEO)
     return _PANEL
 
 
@@ -78,9 +82,16 @@ def reset_video_state():
 
 
 def configure_video_for_tutorial(session_info, learn_num):
-    """Pick tutorial video by learning phase (session 1 → 1–3, session 2 → 4–6)."""
+    """Bind session for the right panel; video files are not used in v1."""
     global _SESSION, _VIDEO_PATH, _PANEL
     _SESSION = dict(session_info) if session_info else None
+    _VIDEO_PATH = None
+    if not STUDY_USE_VIDEO:
+        _log("video: disabled (text/images panel only) session %s learn %s" % (
+            (_SESSION or {}).get("session", 1), learn_num))
+        if _PANEL is not None:
+            _PANEL.set_video_path(None)
+        return
     session_num = (_SESSION or {}).get("session", 1)
     _VIDEO_PATH = _resolve_tutorial_video_path(session_num, learn_num)
     if _VIDEO_PATH:
@@ -95,10 +106,16 @@ def configure_video_for_tutorial(session_info, learn_num):
 
 
 def configure_video_session(session_info, video_override=None):
-    """Pick the tutorial video for this login (condition + session)."""
+    """Bind session for the right panel; video files are not used in v1."""
     global _SESSION, _VIDEO_PATH, _PANEL
     _SESSION = dict(session_info) if session_info else None
     _VIDEO_PATH = None
+    if not STUDY_USE_VIDEO:
+        _log("video: disabled (text/images panel only) session %s" % (
+            _session_label(_SESSION)))
+        if _PANEL is not None:
+            _PANEL.set_video_path(None)
+        return
     if video_override:
         for d in (MEDIA_DIR, PLUGIN_DIR):
             path = os.path.join(d, video_override)
@@ -140,6 +157,8 @@ def _tutorial_video_phase(session_num, learn_num):
 
 
 def _resolve_tutorial_video_path(session_num, learn_num):
+    if not STUDY_USE_VIDEO:
+        return None
     phase = _tutorial_video_phase(session_num, learn_num)
     names = [
         "tutorial %d.mov" % phase,
@@ -418,7 +437,9 @@ class KritaIntroSlideshowWindow(QWidget):
 
 
 def resolve_krita_intro_video_path():
-    """Video shown once before Session 1 Tutorial 1 learning phase."""
+    """Video shown once before Session 1 Tutorial 1 (disabled when STUDY_USE_VIDEO)."""
+    if not STUDY_USE_VIDEO:
+        return None
     names = []
     manifest = _load_video_manifest()
     for key in ("krita_intro", "intro", "environment"):
@@ -717,6 +738,8 @@ def run_krita_environment_intro():
 
 
 def _resolve_video_path(session_info=None):
+    if not STUDY_USE_VIDEO:
+        return None
     if _VIDEO_PATH and os.path.isfile(_VIDEO_PATH):
         return _VIDEO_PATH
     for name in _candidate_names(session_info):
