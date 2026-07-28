@@ -24,15 +24,15 @@
       min-height: 100vh;
     }
     main {
-      max-width: 720px;
+      max-width: 640px;
       margin: 0 auto;
       padding: 48px 24px 80px;
     }
     h1 {
-      font-size: 2rem;
+      font-size: 1.85rem;
       font-weight: 700;
       letter-spacing: -0.02em;
-      margin: 0 0 12px;
+      margin: 0 0 10px;
     }
     .lead {
       color: var(--muted);
@@ -41,7 +41,7 @@
     }
     .downloads {
       display: grid;
-      gap: 14px;
+      gap: 12px;
       margin: 0 0 28px;
     }
     a.btn {
@@ -68,19 +68,18 @@
       border: 1px solid var(--line);
       border-radius: 10px;
       padding: 20px 22px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
     section h2 {
       margin: 0 0 10px;
       font-size: 1.05rem;
     }
-    ol, ul { margin: 0; padding-left: 1.2rem; color: var(--muted); }
-    li { margin: 8px 0; }
-    .meta {
-      font-size: 0.9rem;
+    ol {
+      margin: 0;
+      padding-left: 1.2rem;
       color: var(--muted);
-      margin-top: 24px;
     }
+    li { margin: 8px 0; }
     code {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 0.9em;
@@ -88,118 +87,64 @@
       padding: 1px 6px;
       border-radius: 4px;
     }
-    a.intext { color: #8eb4e8; }
-    .note {
-      margin-top: 12px;
-      padding: 12px 14px;
-      background: #0c1016;
-      border-radius: 8px;
+    .help {
       color: var(--muted);
       font-size: 0.95rem;
+      margin: 20px 0 0;
     }
-    .step-num { color: var(--text); font-weight: 650; }
   </style>
 </head>
 <body>
   <main>
     <h1>Krita UI Learning Study</h1>
     <p class="lead">
-      Install official Krita, then install our small study pack. Log in with the
-      credentials your experimenter sent you. Works on <strong>macOS</strong> and
-      <strong>Windows</strong> (use Krita&nbsp;<strong>5.3.2</strong>).
+      Follow these steps on your computer. Use the login details your experimenter sent you.
     </p>
 
     <div class="downloads">
-      <a class="btn" href="https://krita.org/en/download/">
-        Step 1 — Download Krita (official)
+      <a class="btn" href="https://krita.org/en/" target="_blank" rel="noopener noreferrer">
+        1. Download Krita
       </a>
-      <a class="btn secondary" id="dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/latest">
-        Step 2 — Download study pack
+      <a class="btn secondary" id="dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/latest" target="_blank" rel="noopener noreferrer">
+        2. Download the study pack
       </a>
     </div>
 
     <section>
-      <h2>Setup (macOS)</h2>
+      <h2>On a Mac</h2>
       <ol>
-        <li>
-          <span class="step-num">Install Krita</span> from
-          <a class="intext" href="https://krita.org/en/download/">krita.org/en/download</a>.
-          Choose the <strong>macOS</strong> build for version <strong>5.3.2</strong> if available
-          (or the closest 5.3.x). Open Krita once so macOS trusts it
-          (if asked “downloaded from the internet”, click <strong>Open</strong>).
-        </li>
-        <li>
-          <span class="step-num">Download the study pack</span> (button above) and unzip it.
-        </li>
-        <li>
-          <span class="step-num">Start the study:</span>
-          <strong>Right‑click</strong> <code>Launch Study.command</code> →
-          <strong>Open</strong> → <strong>Open</strong>
-          (required the first time on Mac).
-        </li>
-        <li>
-          The script installs the study plugin and opens Krita. Log in with your
-          Participant ID, Condition, Session, and password.
-        </li>
-      </ol>
-      <p class="note">
-        Do <strong>not</strong> look for a custom “study Krita.app” in the zip.
-        Use the official Krita you installed, plus <code>Launch Study.command</code>.
-      </p>
-    </section>
-
-    <section>
-      <h2>Setup (Windows)</h2>
-      <ol>
-        <li>
-          <span class="step-num">Install Krita</span> from
-          <a class="intext" href="https://krita.org/en/download/">krita.org/en/download</a>.
-          Choose the <strong>Windows</strong> installer for version <strong>5.3.2</strong>
-          (or closest 5.3.x). Open Krita once to confirm it runs.
-        </li>
-        <li>
-          <span class="step-num">Download the study pack</span> (same zip as Mac) and unzip it.
-        </li>
-        <li>
-          <span class="step-num">Start the study:</span>
-          double‑click <code>Launch Study.bat</code>.
-          If Windows SmartScreen appears: <strong>More info</strong> →
-          <strong>Run anyway</strong>.
-        </li>
-        <li>
-          The script installs the study plugin and opens Krita. Log in with your
-          Participant ID, Condition, Session, and password.
-        </li>
+        <li>Install Krita from the link above, then open it once.</li>
+        <li>Download and unzip the study pack.</li>
+        <li><strong>Right‑click</strong> <code>Launch Study.command</code> → <strong>Open</strong> → <strong>Open</strong>.</li>
+        <li>Log in when Krita opens.</li>
       </ol>
     </section>
 
     <section>
-      <h2>What the study pack contains</h2>
-      <ul>
-        <li>Study plugin + install scripts (not a full copy of Krita)</li>
-        <li>Learning / recall UI with text and images on the right panel</li>
-        <li>No ffmpeg / no tutorial videos</li>
-      </ul>
+      <h2>On Windows</h2>
+      <ol>
+        <li>Install Krita from the link above, then open it once.</li>
+        <li>Download and unzip the study pack.</li>
+        <li>Double‑click <code>Launch Study.bat</code>. If Windows warns you, choose <strong>More info</strong> → <strong>Run anyway</strong>.</li>
+        <li>Log in when Krita opens.</li>
+      </ol>
     </section>
 
-    <p class="meta">
-      Source:
-      <a class="intext" href="https://github.com/RabiiAlaouiLamharzi/krita-final">github.com/RabiiAlaouiLamharzi/krita-final</a>
-      · Releases:
-      <a class="intext" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases">releases</a>
-      · Prefer asset <code>KritaStudy-pack.zip</code>
-    </p>
+    <p class="help">If something does not work, message your experimenter — they can help you.</p>
   </main>
   <script>
     fetch("https://api.github.com/repos/RabiiAlaouiLamharzi/krita-final/releases/latest")
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
         if (!data || !data.assets) return;
-        var pack = null;
         data.assets.forEach(function (a) {
-          if (/KritaStudy-pack/i.test(a.name)) pack = a.browser_download_url;
+          if (/KritaStudy-pack/i.test(a.name)) {
+            var el = document.getElementById("dl-study");
+            el.href = a.browser_download_url;
+            el.target = "_blank";
+            el.rel = "noopener noreferrer";
+          }
         });
-        if (pack) document.getElementById("dl-study").href = pack;
       })
       .catch(function () {});
   </script>
