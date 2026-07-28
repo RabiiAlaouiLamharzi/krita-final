@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import traceback
+from html import escape
 
 from PyQt5.QtCore import Qt, QProcess, QTimer, QSize, QThread, pyqtSignal, pyqtSlot, QEventLoop, QUrl
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QPainter
@@ -22,6 +23,22 @@ _PANEL = None
 _SHUTTING_DOWN = False
 _SESSION = None
 _VIDEO_PATH = None
+
+
+def _centered_intro_html(text, color="#b8b8b8", font_px=13):
+    """Rich-text paragraphs with true line-by-line centering in QLabel."""
+    blocks = [b.strip() for b in str(text or "").split("\n\n") if b.strip()]
+    if not blocks:
+        return ""
+    paras = "".join(
+        '<p align="center" style="margin:0 0 12px 0;">%s</p>'
+        % escape(b).replace("\n", "<br/>")
+        for b in blocks
+    )
+    return (
+        '<div style="color:%s; font-size:%dpx;">%s</div>'
+        % (color, font_px, paras)
+    )
 
 
 def _log(msg):
@@ -217,6 +234,189 @@ def _single_video_fallback():
     return None
 
 
+INTRO_IMAGES_SUBDIR = "tutorial 1 images"
+INTRO_IMAGE_STEPS = 8
+
+
+def resolve_krita_intro_image_paths():
+    """Ordered PNG/JPEG paths 1..8 under media/tutorial 1 images/."""
+    folder = os.path.join(MEDIA_DIR, INTRO_IMAGES_SUBDIR)
+    if not os.path.isdir(folder):
+        return []
+    paths = []
+    for step in range(1, INTRO_IMAGE_STEPS + 1):
+        found = None
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            path = os.path.join(folder, "%d%s" % (step, ext))
+            if os.path.isfile(path):
+                found = os.path.abspath(path)
+                break
+        if not found:
+            _log("krita intro: missing image step %d in %s" % (step, folder))
+            return []
+        paths.append(found)
+    return paths
+
+
+class KritaIntroSlideshowWindow(QWidget):
+    """Step-by-step workspace intro (Session 1 Tutorial 1) before learning."""
+
+    def __init__(self, image_paths):
+        super().__init__(None)
+        from .session_flow import STUDY_PRESENTATION
+        from .experiment import _WINDOW_FLAGS, suppress_krita_ui
+        self.setWindowTitle("Welcome to Krita")
+        self.setWindowFlags(_WINDOW_FLAGS)
+        self.setAttribute(Qt.WA_DeleteOnClose, False)
+        self.setStyleSheet("""
+            QWidget { background-color: #2b2b2b; color: #e0e0e0; }
+            QPushButton#introNavBtn {
+                background-color: #4a6fa5; color: white;
+                border: none; padding: 10px 24px; min-width: 120px;
+            }
+            QPushButton#introNavBtn:hover { background-color: #5a7fb5; }
+        """)
+        self._loop = None
+        self._result = None
+        self._image_paths = list(image_paths or [])
+        self._step_index = 0
+        self._source_pixmap = None
+        self._suppress = suppress_krita_ui
+
+        intro_block = QWidget()
+        intro_block.setFixedWidth(560)
+        intro_lay = QVBoxLayout(intro_block)
+        intro_lay.setContentsMargins(0, 0, 0, 0)
+        intro_lay.setSpacing(10)
+
+        heading = QLabel(
+            '<p align="center" style="margin:0; color:#ffffff; '
+            'font-size:24px; font-weight:bold;">Welcome to Krita</p>')
+        heading.setTextFormat(Qt.RichText)
+        heading.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+
+        presentation = QLabel(_centered_intro_html(STUDY_PRESENTATION))
+        presentation.setTextFormat(Qt.RichText)
+        presentation.setWordWrap(True)
+        presentation.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        presentation.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        intro_lay.addWidget(heading)
+        intro_lay.addWidget(presentation)
+
+        intro_row = QHBoxLayout()
+        intro_row.setContentsMargins(0, 0, 0, 0)
+        intro_row.addStretch(1)
+        intro_row.addWidget(intro_block, 0, Qt.AlignHCenter)
+        intro_row.addStretch(1)
+
+        self._image_frame = QWidget()
+        self._image_frame.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._image_frame.setStyleSheet("background-color: #1a1a1a;")
+        frame_lay = QVBoxLayout(self._image_frame)
+        frame_lay.setContentsMargins(8, 8, 8, 8)
+        self._image_label = QLabel()
+        self._image_label.setAlignment(Qt.AlignCenter)
+        self._image_label.setSizePolicy(
+            QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self._image_label.setStyleSheet("background-color: #1a1a1a;")
+        frame_lay.addWidget(self._image_label, 0, Qt.AlignCenter)
+
+        self._nav_btn = QPushButton("Next")
+        self._nav_btn.setDefault(True)
+        self._nav_btn.setObjectName("introNavBtn")
+        self._nav_btn.clicked.connect(self._on_nav)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(32, 24, 32, 24)
+        lay.setSpacing(12)
+        lay.addLayout(intro_row)
+        lay.addWidget(self._image_frame, 1)
+        lay.addWidget(self._nav_btn, 0, Qt.AlignCenter)
+        self.setMinimumSize(960, 720)
+        self._show_step(0)
+
+    def _image_fit_size(self):
+        frame = getattr(self, "_image_frame", None)
+        if frame is not None and frame.width() > 40 and frame.height() > 40:
+            return max(200, frame.width() - 16), max(200, frame.height() - 16)
+        return 880, 520
+
+    def _scaled_pixmap(self):
+        if self._source_pixmap is None or self._source_pixmap.isNull():
+            return QPixmap()
+        max_w, max_h = self._image_fit_size()
+        return self._source_pixmap.scaled(
+            max_w, max_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+    def _refresh_image(self):
+        pix = self._scaled_pixmap()
+        if not pix.isNull():
+            self._image_label.setPixmap(pix)
+        else:
+            self._image_label.clear()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._refresh_image()
+
+    def _show_step(self, index):
+        index = max(0, min(int(index), len(self._image_paths) - 1))
+        self._step_index = index
+        self._source_pixmap = QPixmap(self._image_paths[index])
+        self._refresh_image()
+        total = len(self._image_paths)
+        self._nav_btn.setText("Finish" if index >= total - 1 else "Next")
+
+    def _on_nav(self):
+        if self._step_index >= len(self._image_paths) - 1:
+            self._finish(True)
+        else:
+            self._show_step(self._step_index + 1)
+
+    def _finish(self, result):
+        self._result = result
+        self.hide()
+        if self._loop is not None:
+            self._loop.quit()
+
+    def closeEvent(self, event):
+        self._finish(None)
+        event.accept()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _center_on_screen(self):
+        self.adjustSize()
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            geo = screen.availableGeometry()
+            self.move(
+                geo.center().x() - self.width() // 2,
+                geo.center().y() - self.height() // 2)
+
+    def run_blocking(self):
+        self._loop = QEventLoop()
+        guard = QTimer()
+        guard.setInterval(100)
+        guard.timeout.connect(lambda: self._suppress(self))
+        guard.start()
+        self.showMaximized()
+        self._suppress(self)
+        self._refresh_image()
+        self.raise_()
+        self.activateWindow()
+        self._loop.exec_()
+        guard.stop()
+        self._loop = None
+        return self._result
+
+
 def resolve_krita_intro_video_path():
     """Video shown once before Session 1 Tutorial 1 learning phase."""
     names = []
@@ -284,17 +484,31 @@ class KritaIntroWindow(QWidget):
         self._intro_controls = None
         self._probe_worker = None
 
-        heading = QLabel("Welcome to Krita")
-        heading.setAlignment(Qt.AlignCenter)
-        heading.setStyleSheet(
-            "color: #ffffff; font-size: 24px; font-weight: bold; padding: 8px;")
+        intro_block = QWidget()
+        intro_block.setFixedWidth(560)
+        intro_lay = QVBoxLayout(intro_block)
+        intro_lay.setContentsMargins(0, 0, 0, 0)
+        intro_lay.setSpacing(10)
 
-        presentation = QLabel(STUDY_PRESENTATION)
+        heading = QLabel(
+            '<p align="center" style="margin:0; color:#ffffff; '
+            'font-size:24px; font-weight:bold;">Welcome to Krita</p>')
+        heading.setTextFormat(Qt.RichText)
+        heading.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+
+        presentation = QLabel(_centered_intro_html(STUDY_PRESENTATION))
+        presentation.setTextFormat(Qt.RichText)
         presentation.setWordWrap(True)
-        presentation.setAlignment(Qt.AlignCenter)
-        presentation.setMaximumWidth(680)
-        presentation.setStyleSheet(
-            "color: #b8b8b8; font-size: 13px; padding: 0 24px;")
+        presentation.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        presentation.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        intro_lay.addWidget(heading)
+        intro_lay.addWidget(presentation)
+
+        intro_row = QHBoxLayout()
+        intro_row.setContentsMargins(0, 0, 0, 0)
+        intro_row.addStretch(1)
+        intro_row.addWidget(intro_block, 0, Qt.AlignHCenter)
+        intro_row.addStretch(1)
 
         self._video_frame = QWidget()
         self._video_frame.setMinimumSize(720, 405)
@@ -321,8 +535,7 @@ class KritaIntroWindow(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(32, 24, 32, 24)
         lay.setSpacing(12)
-        lay.addWidget(heading)
-        lay.addWidget(presentation)
+        lay.addLayout(intro_row)
         lay.addWidget(self._video_frame, 1, Qt.AlignCenter)
         lay.addWidget(self._controls_row, 0, Qt.AlignCenter)
         lay.addWidget(self._continue_btn, 0, Qt.AlignCenter)
@@ -477,14 +690,26 @@ class KritaIntroWindow(QWidget):
 
 def run_krita_environment_intro():
     """Show the Krita workspace intro before Tutorial 1. Returns True to continue."""
+    image_paths = resolve_krita_intro_image_paths()
+    if image_paths:
+        try:
+            win = KritaIntroSlideshowWindow(image_paths)
+            from .experiment import suppress_krita_ui
+            suppress_krita_ui(win)
+            _log("krita intro: slideshow (%d steps)" % len(image_paths))
+            return win.run_blocking() is True
+        except Exception:
+            _log(traceback.format_exc())
+            return False
     path = resolve_krita_intro_video_path()
     if not path:
-        _log("krita intro: no video file found, skipping")
+        _log("krita intro: no images or video found, skipping")
         return True
     try:
         win = KritaIntroWindow(path)
         from .experiment import suppress_krita_ui
         suppress_krita_ui(win)
+        _log("krita intro: video fallback")
         return win.run_blocking() is True
     except Exception:
         _log(traceback.format_exc())
@@ -1013,6 +1238,42 @@ class VideoPanelWindow(QWidget):
         self._learning_on_back = None
         self._learning_step_number = 0
         self._learning_step_total = 0
+        self._recall_start_footer = None
+        self._recall_start_btn = None
+        self._recall_on_start = None
+
+    def _ensure_recall_start_footer(self):
+        if self._recall_start_footer is not None:
+            return self._recall_start_footer
+        footer = QWidget()
+        footer.setStyleSheet("background-color: #1a3d5f;")
+        lay = QHBoxLayout(footer)
+        lay.setContentsMargins(20, 12, 20, 20)
+        btn_style = (
+            "QPushButton { background-color: #4a6fa5; color: white; border: none;"
+            " padding: 12px 32px; font-size: 15px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #5a7fb5; }")
+        start_btn = QPushButton("Start first question")
+        start_btn.setStyleSheet(btn_style)
+        start_btn.clicked.connect(self._on_recall_start_clicked)
+        lay.addStretch(1)
+        lay.addWidget(start_btn)
+        lay.addStretch(1)
+        self._recall_start_footer = footer
+        self._recall_start_btn = start_btn
+        self._stack.addWidget(footer)
+        footer.hide()
+        return footer
+
+    def _on_recall_start_clicked(self):
+        cb = self._recall_on_start
+        if cb is not None:
+            cb()
+
+    def hide_recall_start_footer(self):
+        if self._recall_start_footer is not None:
+            self._recall_start_footer.hide()
+        self._recall_on_start = None
 
     def _ensure_learning_footer(self):
         if self._learning_footer is not None:
@@ -1235,6 +1496,7 @@ class VideoPanelWindow(QWidget):
             self._learning_scroll.hide()
         if self._learning_footer is not None:
             self._learning_footer.hide()
+        self.hide_recall_start_footer()
         self.pause()
         self.hide()
 
@@ -1263,15 +1525,20 @@ class VideoPanelWindow(QWidget):
         self.hide_panel()
 
     def _format_text_panel_html(self, title, body):
-        lines = [line.strip() for line in body.strip().split("\n") if line.strip()]
+        from html import escape
         html = "<div style='text-align:center;'>"
         html += (
             "<p style='font-size:26px; font-weight:bold; margin-bottom:20px;'>"
-            "%s</p>" % title)
-        for line in lines:
-            html += (
-                "<p style='font-size:17px; line-height:1.5; margin:8px 0;'>"
-                "%s</p>" % line)
+            "%s</p>" % escape(str(title)))
+        body = str(body or "").strip()
+        if body.startswith("<"):
+            html += body
+        else:
+            lines = [line.strip() for line in body.split("\n") if line.strip()]
+            for line in lines:
+                html += (
+                    "<p style='font-size:17px; line-height:1.5; margin:8px 0;'>"
+                    "%s</p>" % line)
         html += "</div>"
         return html
 
@@ -1286,6 +1553,9 @@ class VideoPanelWindow(QWidget):
             self._host.hide()
         scroll = self._ensure_learning_scroll()
         scroll.hide()
+        if self._recall_start_footer is not None:
+            self._recall_start_footer.hide()
+        self._message.setTextFormat(Qt.RichText)
         self._message.setText(self._format_text_panel_html(title, body))
         self._message.setAlignment(Qt.AlignCenter)
         self._message.setStyleSheet(
@@ -1394,6 +1664,7 @@ class VideoPanelWindow(QWidget):
             self._learning_scroll.hide()
         if self._learning_footer is not None:
             self._learning_footer.hide()
+        self.hide_recall_start_footer()
         self._message.setStyleSheet("color: #ddd; font-size: 13px; padding: 24px;")
         self._message.setText("Loading video…")
         self.hide_panel()
@@ -1405,11 +1676,18 @@ class VideoPanelWindow(QWidget):
     def end_learning_instructions_panel(self):
         self._end_text_panel("learning")
 
-    def show_recall_instructions_panel(self, pos, size, title, body):
-        """Replace the video area with recall instructions; Krita stays in place."""
+    def show_recall_instructions_panel(
+            self, pos, size, title, body, on_start=None):
+        """Replace the video area with recall instructions; Krita may stay hidden."""
+        self._recall_on_start = on_start
         self._show_text_panel(pos, size, title, body, "recall", "#1a3d5f")
+        if on_start is not None:
+            footer = self._ensure_recall_start_footer()
+            footer.show()
+            self._recall_start_btn.setEnabled(True)
 
     def end_recall_instructions_panel(self):
+        self.hide_recall_start_footer()
         self._end_text_panel("recall")
 
     def destroy(self):

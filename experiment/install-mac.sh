@@ -28,6 +28,14 @@ CSS_STYLES_DEST="$KRITA_SUPPORT/css_styles"
 mkdir -p "$CSS_STYLES_DEST"
 cp "$ROOT/config/study_large_text.svg" "$CSS_STYLES_DEST/Study_Large_Text.svg"
 
+mkdir -p "$PLUGIN_DEST/images"
+if [ -d "$ROOT/images" ]; then
+  rsync -a "$ROOT/images/" "$PLUGIN_DEST/images/"
+  echo "Copied images/ (including images-steps)"
+else
+  echo "WARNING: $ROOT/images/ not found — add tutorial reference PNGs there."
+fi
+
 mkdir -p "$PLUGIN_DEST/media"
 if [ -d "$ROOT/media" ]; then
   rsync -a "$ROOT/media/" "$PLUGIN_DEST/media/"

@@ -9,6 +9,7 @@ import json
 import hashlib
 import datetime
 import traceback
+import re
 
 from PyQt5.QtCore import Qt, QEventLoop, QTimer
 from PyQt5.QtWidgets import (
@@ -39,16 +40,44 @@ def _resolve_base_dir():
 
 BASE_DIR = _resolve_base_dir()
 PASSWORDS_FILE = os.path.join(PLUGIN_DIR, "passwords.json")
+PASSWORDS_PLAIN_FILE = os.path.join(PLUGIN_DIR, "passwords_plain.json")
+_passwords_config_cache = None
 CONSENT_FILE = os.path.join(PLUGIN_DIR, "consent.txt")
 LOG = os.path.expanduser("~/krita_hide_ui_log.txt")
 
 CONDITIONS = ["A", "B", "C"]
+PARTICIPANT_ID_MIN = 0
+PARTICIPANT_ID_MAX = 59
 # Valid sessions per condition (password = condition + session, e.g. A1, B4).
 CONDITION_SESSIONS = {
     "A": ["1", "2"],
     "B": ["1", "2"],
     "C": ["1", "2"],
 }
+
+
+def normalize_participant_id(text):
+    """Return canonical P00–P59 id, or None if invalid."""
+    raw = (text or "").strip().upper()
+    if not re.match(r"^P\d{1,2}$", raw):
+        return None
+    num = int(raw[1:], 10)
+    if num < PARTICIPANT_ID_MIN or num > PARTICIPANT_ID_MAX:
+        return None
+    return "P%02d" % num
+
+
+def condition_for_participant_id(participant_id):
+    """Assign A/B/C from participant number (P00–P19 / P20–P39 / P40–P59)."""
+    pid = normalize_participant_id(participant_id)
+    if pid is None:
+        return None
+    num = int(pid[1:], 10)
+    if num <= 19:
+        return "A"
+    if num <= 39:
+        return "B"
+    return "C"
 
 # Standalone window on top of everything (incl. Krita splash).
 _WINDOW_FLAGS = (
@@ -102,37 +131,115 @@ def restore_krita_ui(qwin=None):
     return False
 
 
-def _default_passwords_plain():
-    plain = {}
+def _default_passwords_config():
+    """Plain-text passwords — edit passwords_plain.json."""
+    import random
+
+    _WORDS_A = (
+        "cat", "dog", "moon", "pizza", "turtle", "coffee", "banana", "hot",
+        "rocket", "pickle", "penguin", "sun", "fish", "bird", "cake", "tree",
+        "star", "boat", "bean", "lion", "frog", "cloud", "mango", "cookie",
+    )
+    _WORDS_B = (
+        "dog", "pie", "time", "shell", "bean", "walk", "house", "fish", "fly",
+        "run", "jump", "blue", "red", "gold", "rain", "snow", "wave", "rock",
+        "mint", "lime", "berry", "toast", "soup", "noodle",
+    )
+    used = set()
+
+    def _memorable():
+        for _ in range(200):
+            w1 = random.choice(_WORDS_A)
+            w2 = random.choice(_WORDS_B)
+            if w2 == w1:
+                continue
+            num = random.randint(10, 99)
+            if random.random() < 0.15:
+                num = random.randint(100, 999)
+            pwd = "%s%s%d" % (w1, w2, num)
+            if pwd not in used and len(pwd) <= 16:
+                used.add(pwd)
+                return pwd
+        return "catdog69"
+
+    login = {}
     for c, sessions in CONDITION_SESSIONS.items():
         for s in sessions:
-            plain["%s-%s" % (s, c)] = "%s%s" % (c, s)
-    return plain
+            login["%s-%s" % (s, c)] = _memorable()
+    return {
+        "login": login,
+        "skip_learning": {"1": _memorable(), "2": _memorable()},
+        "skip_recall": {"1": _memorable(), "2": _memorable()},
+    }
 
 
-def _expected_password_keys():
-    return set(_default_passwords_plain().keys())
+def _merge_passwords_config(stored, defaults):
+    merged = {
+        "login": dict(defaults["login"]),
+        "skip_learning": dict(defaults["skip_learning"]),
+        "skip_recall": dict(defaults["skip_recall"]),
+    }
+    for section in merged:
+        if isinstance(stored.get(section), dict):
+            for key, val in stored[section].items():
+                if val is not None and str(val).strip():
+                    merged[section][str(key)] = str(val)
+    return merged
 
 
-def load_password_hashes():
-    expected = _expected_password_keys()
+def _sync_login_password_hashes(login_plain):
+    expected = {k: _hash(v) for k, v in login_plain.items()}
     try:
         if os.path.exists(PASSWORDS_FILE):
             with open(PASSWORDS_FILE) as f:
                 stored = json.load(f)
-            if set(stored.keys()) == expected:
-                return stored
+            if stored == expected:
+                return expected
     except Exception:
         _log(traceback.format_exc())
-    plain = _default_passwords_plain()
-    hashed = {k: _hash(v) for k, v in plain.items()}
     try:
         with open(PASSWORDS_FILE, "w") as f:
-            json.dump(hashed, f, indent=2, sort_keys=True)
-        _log("passwords.json updated: " + ", ".join(sorted(plain.values())))
+            json.dump(expected, f, indent=2, sort_keys=True)
+        _log("passwords.json synced from passwords_plain.json")
     except Exception:
         _log(traceback.format_exc())
-    return hashed
+    return expected
+
+
+def load_passwords_config():
+    """Load login + skip passwords; creates passwords_plain.json if missing."""
+    global _passwords_config_cache
+    defaults = _default_passwords_config()
+    cfg = defaults
+    try:
+        if os.path.isfile(PASSWORDS_PLAIN_FILE):
+            with open(PASSWORDS_PLAIN_FILE) as f:
+                stored = json.load(f)
+            cfg = _merge_passwords_config(stored, defaults)
+        else:
+            with open(PASSWORDS_PLAIN_FILE, "w") as f:
+                json.dump(defaults, f, indent=2, sort_keys=True)
+            _log("Created passwords_plain.json with default passwords")
+    except Exception:
+        _log(traceback.format_exc())
+        cfg = defaults
+    _passwords_config_cache = cfg
+    return cfg
+
+
+def load_password_hashes():
+    cfg = load_passwords_config()
+    return _sync_login_password_hashes(cfg["login"])
+
+
+def get_skip_learning_password(session):
+    cfg = _passwords_config_cache or load_passwords_config()
+    return cfg.get("skip_learning", {}).get(str(int(session)), "")
+
+
+def get_skip_recall_password(session):
+    cfg = _passwords_config_cache or load_passwords_config()
+    return cfg.get("skip_recall", {}).get(str(int(session)), "")
 
 
 DEFAULT_CONSENT = (
@@ -397,9 +504,9 @@ class LoginWindow(GatewayWindow):
         subtitle.setStyleSheet("color:#aaa;")
 
         self.pid = QLineEdit()
-        self.pid.setPlaceholderText("e.g. P07")
-        self.condition = QComboBox()
-        self.condition.addItems(CONDITIONS)
+        self.pid.setPlaceholderText("P00–P59 (e.g. P07)")
+        self.condition_label = QLabel("—")
+        self.condition_label.setStyleSheet("color: #e0e0e0; font-weight: bold;")
         self.session = QComboBox()
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.Password)
@@ -408,12 +515,12 @@ class LoginWindow(GatewayWindow):
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight)
         form.addRow("Participant ID:", self.pid)
-        form.addRow("Condition:", self.condition)
+        form.addRow("Condition:", self.condition_label)
         form.addRow("Session:", self.session)
         form.addRow("Password:", self.password)
 
         self._update_sessions()
-        self.condition.currentIndexChanged.connect(self._update_sessions)
+        self.pid.textChanged.connect(self._on_participant_id_changed)
 
         self.msg = QLabel("")
         self.msg.setStyleSheet("color:#e06c6c;")
@@ -452,8 +559,27 @@ class LoginWindow(GatewayWindow):
         self.quitBtn.clicked.connect(lambda: self._finish(None))
         self.password.returnPressed.connect(self._try_start)
 
+    def _current_condition(self):
+        return condition_for_participant_id(self.pid.text())
+
+    def _on_participant_id_changed(self, _text=None):
+        cond = self._current_condition()
+        if cond:
+            self.condition_label.setText(cond)
+            self.condition_label.setStyleSheet(
+                "color: #e0e0e0; font-weight: bold;")
+        else:
+            raw = self.pid.text().strip()
+            if raw:
+                self.condition_label.setText("Invalid ID")
+                self.condition_label.setStyleSheet("color: #e06c6c;")
+            else:
+                self.condition_label.setText("—")
+                self.condition_label.setStyleSheet("color: #888;")
+        self._update_sessions()
+
     def _update_sessions(self):
-        c = self.condition.currentText()
+        c = self._current_condition() or "A"
         sessions = CONDITION_SESSIONS.get(c, [])
         self.session.blockSignals(True)
         self.session.clear()
@@ -461,17 +587,18 @@ class LoginWindow(GatewayWindow):
         self.session.blockSignals(False)
 
     def _try_start(self):
-        pid = self.pid.text().strip()
-        if not pid:
-            self.msg.setText("Please enter your Participant ID.")
+        pid = normalize_participant_id(self.pid.text())
+        if pid is None:
+            self.msg.setText(
+                "Participant ID must be P00 through P59 (e.g. P07).")
             return
+        c = condition_for_participant_id(pid)
         s = self.session.currentText()
-        c = self.condition.currentText()
         key = "%s-%s" % (s, c)
         expected = self._hashes.get(key)
         if not expected or _hash(self.password.text()) != expected:
             self.msg.setText(
-                "Incorrect password for this session/condition.")
+                "Incorrect password for this session and assigned condition.")
             return
         self._finish({
             "participant_id": pid,

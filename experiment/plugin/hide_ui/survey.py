@@ -1,5 +1,6 @@
-"""Session 2 surveys: short post-recall + final end-of-session."""
+"""Session 1 & 2 surveys: post-recall + final end-of-session (Session 2)."""
 
+import time
 import traceback
 
 from PyQt5.QtCore import Qt
@@ -18,10 +19,6 @@ POST_RECALL_LIKERT = [
     {
         "id": "recall_difficulty",
         "text": "It was difficult to recall where commands were located.",
-    },
-    {
-        "id": "hard_without_labels",
-        "text": "Finding commands without labels or icons was difficult.",
     },
 ]
 
@@ -133,6 +130,7 @@ class SessionSurveyWindow(GatewayWindow):
         self._survey_type = survey_type
         self._learn_num = int(learn_num or 0)
         self._phase_index = int(phase_index if phase_index else learn_num or 0)
+        self._shown_ms = 0
 
         title = QLabel(title_text or "Feedback survey")
         title.setAlignment(Qt.AlignCenter)
@@ -220,6 +218,15 @@ class SessionSurveyWindow(GatewayWindow):
         self.setMinimumSize(600, 480)
         self.resize(640, 540)
 
+    def run_blocking(self):
+        self._shown_ms = int(time.time() * 1000)
+        from .experiment_log import start_survey
+        start_survey(
+            self._survey_type,
+            learn_num=self._learn_num,
+            phase_index=self._phase_index)
+        return super().run_blocking()
+
     def _try_submit(self):
         missing_likert = []
         responses = {
@@ -254,6 +261,9 @@ class SessionSurveyWindow(GatewayWindow):
                 self._msg.setText(
                     "Please answer every open-ended question before continuing.")
             return
+        if self._shown_ms:
+            responses["duration_ms"] = max(
+                0, int(time.time() * 1000) - int(self._shown_ms))
         from .experiment_log import log_survey_responses
         log_survey_responses(responses)
         _log("survey completed (%s learn=%s): %s" % (
@@ -266,7 +276,7 @@ class SessionSurveyWindow(GatewayWindow):
 
 
 def run_post_recall_survey(learn_num=0):
-    """Short 2-item Likert survey after a Session 2 learning-block recall."""
+    """Single Likert item after a learning-block recall (Session 1 & 2)."""
     try:
         win = SessionSurveyWindow(
             likert_items=POST_RECALL_LIKERT,
@@ -274,7 +284,7 @@ def run_post_recall_survey(learn_num=0):
             title_text="Recall feedback",
             intro_text=(
                 "Please rate how this recall block felt.\n"
-                "Rate each statement from 1 (strongly disagree) to 5 "
+                "Rate the statement from 1 (strongly disagree) to 5 "
                 "(strongly agree)."),
             survey_type=SURVEY_POST_RECALL,
             learn_num=learn_num,

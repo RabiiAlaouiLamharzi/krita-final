@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt, QTimer, QRectF, QEventLoop
 from PyQt5.QtGui import QPainter, QColor
 from PyQt5.QtWidgets import (
     QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QApplication,
-    QSizePolicy, QLineEdit)
+    QSizePolicy, QMessageBox)
 
 from .experiment import GatewayWindow, suppress_krita_ui, _log
 
@@ -22,8 +22,17 @@ TUTORIAL_TIME_SEC = TUTORIAL_1_TIME_SEC
 BREAK_MESSAGE = {
     "title": "Break",
     "body": (
-        "This is a 2-minute break.\n\n"
-        "Please rest."),
+        "This is a 2-minute break. You can either take this time to rest or "
+        "click Continue immediately to start the next learning tutorial."),
+}
+
+BREAK_MESSAGE_SESSION2_FINAL = {
+    "title": "Break",
+    "body": (
+        "This is a 2-minute break. You can either take this time to rest or "
+        "click Continue immediately to complete a short survey consisting of "
+        "two questions. This will be the final activity you need to complete "
+        "for this study!"),
 }
 
 
@@ -34,18 +43,22 @@ def session2_tutorial_count(condition):
 
 
 def learning_skip_password(condition, session, learn_num):
-    """Experimenter skip password for a learning phase or its following break."""
-    return "%s%sL%s" % (condition, session, int(learn_num))
+    """One skip password per session — all learning tutorials in that session."""
+    del condition, learn_num
+    from .experiment import get_skip_learning_password
+    return get_skip_learning_password(session)
 
 
 def break_skip_password(condition, session, learn_num):
-    """Same password as the learning block that preceded this break (e.g. A1L1)."""
+    """Same password as learning skip for this session."""
     return learning_skip_password(condition, session, learn_num)
 
 
 def recall_skip_password(condition, session, learn_num):
-    """Same password as the learning block for this recall (e.g. A1L1)."""
-    return learning_skip_password(condition, session, learn_num)
+    """One skip password per session — all recall blocks in that session."""
+    del condition, learn_num
+    from .experiment import get_skip_recall_password
+    return get_skip_recall_password(session)
 
 
 def _tutorial_time_label(seconds):
@@ -55,38 +68,79 @@ def _tutorial_time_label(seconds):
     return "%d second%s" % (seconds, "" if seconds == 1 else "s")
 
 
-def _learn_body(seconds, extra=""):
-    base = (
-        "Follow the step-by-step instructions on the right.\n\n"
-        "Work through each step in Krita.\n\n"
-        "You will have %s to practice when the canvas opens."
-        % _tutorial_time_label(seconds)
-    )
-    if extra:
-        return extra + "\n\n" + base
-    return base
+def _learn_task_paragraph():
+    return (
+        "The task involves recreating a simple drawing in Krita, but you do "
+        "not need to be a perfectionist. Just make sure to follow the "
+        "step-by-step process as accurately as possible.")
+
+
+def _learn_intro_body(seconds, start_paragraph, include_workspace_intro=False):
+    parts = [
+        start_paragraph + " Follow the step-by-step instructions displayed on "
+        "the right. You will have %s to complete the tutorial once the canvas "
+        "opens." % _tutorial_time_label(seconds),
+        _learn_task_paragraph(),
+    ]
+    if include_workspace_intro:
+        parts.append(
+            "Before starting Tutorial 1, you will first see a short "
+            "introduction to the Krita workspace.")
+    return "\n\n".join(parts)
+
+
+def _session_learning_start_paragraph(session_num, tutorial_index):
+    ordinals = ("first", "second", "third")
+    idx = max(1, min(3, int(tutorial_index))) - 1
+    return (
+        "Session %d includes three learning tutorials in total. You will now "
+        "start the %s learning tutorial."
+        % (max(1, int(session_num)), ordinals[idx]))
+
+
+def session1_learning_intro_body(tutorial_index):
+    idx = max(1, min(3, int(tutorial_index)))
+    start = _session_learning_start_paragraph(1, idx)
+    seconds = TUTORIAL_PRACTICE_SEC if idx == 1 else TUTORIAL_LEARN_SEC
+    return _learn_intro_body(
+        seconds, start, include_workspace_intro=(idx == 1))
+
+
+def session2_learning_intro_body(tutorial_index):
+    idx = max(1, min(3, int(tutorial_index)))
+    start = _session_learning_start_paragraph(2, idx)
+    return _learn_intro_body(TUTORIAL_LEARN_SEC, start)
+
+
+def learning_intro_body_for_session(session_num, tutorial_index):
+    if int(session_num) == 2:
+        return session2_learning_intro_body(tutorial_index)
+    return session1_learning_intro_body(tutorial_index)
+
+
+_RECALL_AFTER_INTRO = (
+    "where you will be asked to identify the positions of a set of commands "
+    "you used during the tutorial. This will help us assess whether you "
+    "remember their locations.")
 
 
 TUTORIAL_1 = {
     "title": "Tutorial 1: Practice trial",
-    "body": _learn_body(
-        TUTORIAL_PRACTICE_SEC,
-        "This first block is a practice trial. "
-        "You will first watch a short introduction to the Krita workspace."),
+    "body": session1_learning_intro_body(1),
     "logged": True,
     "learn_sec": TUTORIAL_PRACTICE_SEC,
 }
 
 TUTORIAL_2 = {
     "title": "Learning Tutorial 2",
-    "body": _learn_body(TUTORIAL_LEARN_SEC),
+    "body": session1_learning_intro_body(2),
     "logged": True,
     "learn_sec": TUTORIAL_LEARN_SEC,
 }
 
 TUTORIAL_3 = {
     "title": "Learning Tutorial 3",
-    "body": _learn_body(TUTORIAL_LEARN_SEC),
+    "body": session1_learning_intro_body(3),
     "logged": True,
     "learn_sec": TUTORIAL_LEARN_SEC,
 }
@@ -94,20 +148,22 @@ TUTORIAL_3 = {
 SESSION_1_TUTORIALS = (TUTORIAL_1, TUTORIAL_2, TUTORIAL_3)
 
 STUDY_PRESENTATION = (
-    "Krita is a drawing program. For this study you use a simplified version.\n\n"
-    "Watch the video below for a quick tour of your workspace.")
+    "Krita is a professional painting program used by thousands of artists worldwide. "
+    "This study uses a simplified interface to help you learn key commands and panels "
+    "without the complexity of the full program.\n\n"
+    "Click Next to explore each panel and its associated commands. "
+    "Click Finish on the last screen to proceed with the study.")
 
 SESSION_2_OPENING_RECALL = {
     "title": "Recall: Layout A",
     "body": (
-        "Before the new tutorials, you will take a recall test on the "
-        "interface you learned in Session 1.\n\n"
-        "Click each command location as quickly and accurately as you can."),
+        "Before introducing the new tutorials, you will begin Session 2 with a "
+        "recall test to assess whether you still remember the positions of the "
+        "commands you learned in Session 1."),
 }
 
 SESSION_2_TUTORIAL = {
     "title": "Learning Tutorial %d",
-    "body": _learn_body(TUTORIAL_LEARN_SEC),
     "logged": True,
     "learn_sec": TUTORIAL_LEARN_SEC,
 }
@@ -116,23 +172,23 @@ HOLD_AFTER_TUTORIAL = {
     1: {
         "title": "Tutorial 1 complete",
         "body": (
-            "Nice work.\n\n"
-            "When you press Continue, you will take a practice recall test, "
-            "then Learning Tutorial 2 will begin."),
+            "Nice work. When you press Continue, you will take a practice "
+            "recall test %s After the recall test, Learning Tutorial 2 will "
+            "begin." % _RECALL_AFTER_INTRO),
     },
     2: {
         "title": "Tutorial 2 complete",
         "body": (
-            "Nice work.\n\n"
-            "When you press Continue, you will take a short recall test, "
-            "then Learning Tutorial 3 will begin."),
+            "Nice work. When you press Continue, you will take a recall test "
+            "%s After the recall test, Learning Tutorial 3 will begin."
+            % _RECALL_AFTER_INTRO),
     },
     3: {
         "title": "Tutorial 3 complete",
         "body": (
-            "Nice work.\n\n"
-            "When you press Continue, you will take a short recall test, "
-            "then Session 1 will end."),
+            "Nice work. When you press Continue, you will take a recall test "
+            "%s After the recall test, Session 1 will end."
+            % _RECALL_AFTER_INTRO),
     },
 }
 
@@ -140,23 +196,24 @@ HOLD_SESSION2_AFTER_TUTORIAL = {
     1: {
         "title": "Tutorial 1 complete",
         "body": (
-            "Nice work.\n\n"
-            "When you press Continue, you will take a short recall test, "
-            "then the next tutorial will begin."),
+            "Nice work. When you press Continue, you will take a recall test "
+            "%s After the recall test, Learning Tutorial 2 will begin."
+            % _RECALL_AFTER_INTRO),
     },
     2: {
         "title": "Tutorial 2 complete",
         "body": (
-            "Nice work.\n\n"
-            "When you press Continue, you will take a short recall test, "
-            "then the next tutorial will begin."),
+            "Nice work. When you press Continue, you will take a recall test "
+            "%s After the recall test, Learning Tutorial 3 will begin."
+            % _RECALL_AFTER_INTRO),
     },
     3: {
         "title": "Tutorial 3 complete",
         "body": (
-            "Nice work.\n\n"
-            "When you press Continue, you will take a short recall test, "
-            "then a short survey, then a break, then the final survey."),
+            "Nice work. When you press Continue, you will take a recall test "
+            "%s After the recall test, you will complete a short survey, "
+            "then a break, then the final survey."
+            % _RECALL_AFTER_INTRO),
     },
 }
 
@@ -238,11 +295,11 @@ def _format_countdown(seconds_left):
 class TimedBreakWindow(GatewayWindow):
     """Standalone break screen with countdown; Krita stays hidden."""
 
-    def __init__(self, title, body, duration_sec, skip_password=None):
+    def __init__(self, title, body, duration_sec, allow_skip=False):
         super().__init__(title)
         self._remaining = max(1, int(duration_sec))
-        self._skip_password = skip_password
-        self._end_reason = "completed"
+        self._end_reason = "complete"
+        self._allow_skip = bool(allow_skip)
         self._tick = QTimer(self)
         self._tick.setInterval(1000)
         self._tick.timeout.connect(self._on_tick)
@@ -280,7 +337,7 @@ class TimedBreakWindow(GatewayWindow):
 
         footer = QHBoxLayout()
         footer.addStretch(1)
-        if skip_password:
+        if self._allow_skip:
             skip_btn = QPushButton("Skip break")
             skip_btn.setObjectName("quitBtn")
             skip_btn.clicked.connect(self._try_skip)
@@ -298,18 +355,19 @@ class TimedBreakWindow(GatewayWindow):
         self.setMinimumSize(560, max(360, inner.sizeHint().height() + 140))
 
     def _try_skip(self):
-        if not self._skip_password:
+        if not self._allow_skip:
             return
-        from PyQt5.QtWidgets import QInputDialog
-        entered, ok = QInputDialog.getText(
+        answer = QMessageBox.question(
             self,
             "Skip break",
-            "Enter the skip password for this break:",
-            QLineEdit.Password)
-        if ok and entered == self._skip_password:
-            _log("break skipped: %s" % self._skip_password)
-            self._end_reason = "experimenter_skip"
-            self._finish(True)
+            "Are you sure you want to skip this break?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        _log("break skipped: confirmed")
+        self._end_reason = "experimenter_skip"
+        self._finish(True)
 
     def _on_tick(self):
         self._remaining -= 1
@@ -338,45 +396,43 @@ class TimedBreakWindow(GatewayWindow):
         return self._result
 
 
-def run_timed_break(skip_password=None):
+def run_timed_break(allow_skip=False, body=None):
     """Show timed break window. Returns (finished_ok, end_reason)."""
+    break_body = body if body is not None else BREAK_MESSAGE["body"]
     try:
         win = TimedBreakWindow(
             BREAK_MESSAGE["title"],
-            BREAK_MESSAGE["body"],
+            break_body,
             BREAK_SEC,
-            skip_password=skip_password)
+            allow_skip=allow_skip)
         suppress_krita_ui(win)
         if win.run_blocking() is not True:
             return False, ""
-        return True, getattr(win, "_end_reason", "completed")
+        return True, getattr(win, "_end_reason", "complete")
     except Exception:
         _log(traceback.format_exc())
         return False, ""
 
 
 class RecallScoreWindow(GatewayWindow):
-    """Show recall score before continuing to the next study block."""
+    """Brief encouragement after recall; no score shown to the participant."""
 
-    def __init__(self, percent):
+    def __init__(self, percent=None):
         super().__init__("Recall complete")
-        pct = max(0, min(100, int(percent)))
+        _ = percent  # logged elsewhere; not shown in the UI
 
-        heading = QLabel("Recall complete")
+        heading = QLabel("Good job!")
         heading.setAlignment(Qt.AlignCenter)
         heading.setWordWrap(True)
         heading.setStyleSheet(
             "color: #ffffff; font-size: 22px; font-weight: bold; padding: 0 12px;")
 
-        score = QLabel("%d%%" % pct)
-        score.setAlignment(Qt.AlignCenter)
-        score.setStyleSheet(
-            "color: #ffffff; font-size: 72px; font-weight: bold; padding: 8px 12px;")
-
-        sub = QLabel("Your score")
-        sub.setAlignment(Qt.AlignCenter)
-        sub.setWordWrap(True)
-        sub.setStyleSheet("color: #f2f2f2; font-size: 16px; padding: 4px 12px;")
+        message = QLabel(
+            "Thank you for completing this recall task. "
+            "Click Continue when you are ready to proceed.")
+        message.setAlignment(Qt.AlignCenter)
+        message.setWordWrap(True)
+        message.setStyleSheet("color: #f2f2f2; font-size: 16px; padding: 8px 12px;")
 
         continue_btn = QPushButton("Continue")
         continue_btn.setDefault(True)
@@ -389,9 +445,7 @@ class RecallScoreWindow(GatewayWindow):
         lay.setSpacing(10)
         lay.setContentsMargins(12, 8, 12, 8)
         lay.addWidget(heading)
-        lay.addSpacing(12)
-        lay.addWidget(score)
-        lay.addWidget(sub)
+        lay.addWidget(message)
         lay.addSpacing(24)
         lay.addWidget(continue_btn, alignment=Qt.AlignCenter)
 
@@ -407,7 +461,7 @@ class RecallScoreWindow(GatewayWindow):
 
 
 def run_recall_score_screen(percent):
-    """Show recall score; return True when the participant continues."""
+    """Show post-recall encouragement; return True when the participant continues."""
     try:
         win = RecallScoreWindow(percent)
         suppress_krita_ui(win)

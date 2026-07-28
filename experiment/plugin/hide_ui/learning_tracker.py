@@ -76,6 +76,8 @@ class LearningTracker:
         if write_pointer is None:
             from .experiment_log import log_learning_pointer
             write_pointer = log_learning_pointer
+        from .experiment_log import backfill_learning_pointer_step_ended
+        self._backfill_pointer_step_ended = backfill_learning_pointer_step_ended
         self._write = write_step
         self._write_pointer = write_pointer
         self._active = False
@@ -86,7 +88,6 @@ class LearningTracker:
         self._step_shown_ms = 0
         self._first_match_ms = None
         self._commands_clicked = []
-        self._command_timestamps_ms = []
         self._longest_pause_ms = 0
         self._last_meaningful_ms = 0
         self._last_pointer_move_ms = 0
@@ -150,7 +151,6 @@ class LearningTracker:
         self._step_open = True
         self._first_match_ms = None
         self._commands_clicked = []
-        self._command_timestamps_ms = []
         self._longest_pause_ms = 0
         self._last_meaningful_ms = now
         self._last_pointer_move_ms = 0
@@ -162,15 +162,8 @@ class LearningTracker:
             int(existing.get("step_duration_ms") or 0)
             + int(new.get("step_duration_ms") or 0))
         old_cmds = _split_pipe(existing.get("commands_clicked"))
-        old_times = _split_pipe(existing.get("command_timestamps_ms"))
-        while len(old_times) < len(old_cmds):
-            old_times.append("")
         new_cmds = _split_pipe(new.get("commands_clicked"))
-        new_times = _split_pipe(new.get("command_timestamps_ms"))
-        while len(new_times) < len(new_cmds):
-            new_times.append("")
         merged["commands_clicked"] = "|".join(old_cmds + new_cmds)
-        merged["command_timestamps_ms"] = "|".join(old_times + new_times)
         old_delay = existing.get("delay_until_matching_action_ms", "")
         new_delay = new.get("delay_until_matching_action_ms", "")
         if old_delay not in (None, "") and new_delay not in (None, ""):
@@ -197,6 +190,11 @@ class LearningTracker:
             merged["longest_pause_ms"] = ""
         merged["required_command"] = (
             existing.get("required_command") or new.get("required_command") or "")
+        if existing.get("step_started_ms") not in (None, ""):
+            merged["step_started_ms"] = existing.get("step_started_ms")
+        else:
+            merged["step_started_ms"] = new.get("step_started_ms", "")
+        merged["step_ended_ms"] = new.get("step_ended_ms") or existing.get("step_ended_ms", "")
         return merged
 
     def _flush_step_row(self, step_next_time_ms):
@@ -215,15 +213,16 @@ class LearningTracker:
             self._steps[self._current_step_index]
             if self._current_step_index < len(self._steps) else "")
         step_number = self._current_step_index + 1
+        step_started_ms = self._step_shown_ms
         new_data = {
             "step_number": step_number,
+            "step_started_ms": step_started_ms,
+            "step_ended_ms": next_ms,
             "step_duration_ms": step_duration,
             "delay_until_matching_action_ms": delay_match,
             "followed_instruction": followed,
             "longest_pause_ms": pause,
             "commands_clicked": "|".join(self._commands_clicked),
-            "command_timestamps_ms": "|".join(
-                str(t) for t in self._command_timestamps_ms),
             "required_command": required_command_for_step(step_text),
         }
         update_existing = step_number in self._step_row_cache
@@ -240,6 +239,11 @@ class LearningTracker:
                 tutorial_number=self._tutorial_number,
                 **new_data)
             self._step_row_cache[step_number] = dict(new_data)
+        try:
+            self._backfill_pointer_step_ended(
+                self._tutorial_number, step_number, step_started_ms, next_ms)
+        except Exception:
+            pass
         self._step_open = False
         self._step_shown_ms = 0
 
@@ -273,6 +277,8 @@ class LearningTracker:
             preset = str(event_value or "").lower()
             if required == "Eraser Preset" and "eraser" in preset:
                 return "yes"
+            if required == "Round brush preset" and "eraser" not in preset:
+                return "yes"
             if command and command == required:
                 return "yes"
         if event_type == "tool_selected" and command == required:
@@ -302,10 +308,8 @@ class LearningTracker:
         now = _now_ms()
         self._note_meaningful_action(now)
         label = _command_label(event_type, event_value)
-        rel_ms = max(0, now - self._step_shown_ms) if self._step_shown_ms else 0
         if label:
             self._commands_clicked.append(label)
-            self._command_timestamps_ms.append(int(rel_ms))
         match = self._match_for_current_step(event_type, event_value)
         if match in ("yes", "partial") and self._first_match_ms is None:
             self._first_match_ms = now
@@ -326,7 +330,9 @@ class LearningTracker:
             self._write_pointer(
                 tutorial_number=self._tutorial_number,
                 step_number=self._current_step_index + 1,
-                ms_from_step_start=int(rel_ms),
+                step_started_ms=self._step_shown_ms,
+                event_ms=now,
+                event_offset_ms=int(rel_ms),
                 event_type=et,
                 x=int(x),
                 y=int(y),

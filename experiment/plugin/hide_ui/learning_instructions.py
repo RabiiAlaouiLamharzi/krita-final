@@ -21,6 +21,7 @@ COMMAND_ICONS = {
     "Text Tool": "Text tool.png",
     "Rectangle Tool": "Rectangle Tool.png",
     "Eraser Preset": "Eraser Preset.png",
+    "Round brush preset": "Brush Preset.png",
     "Move down": "Move down.png",
     "Move up": "Move up.png",
 }
@@ -34,13 +35,27 @@ REFERENCE_IMAGES = {
     6: "tutorial 6.png",
 }
 
+IMAGES_STEPS_DIR = os.path.join(IMAGES_DIR, "images-steps")
+
+# Step numbers at which the side-panel reference image updates (phase = tutorial 1–6).
+PROGRESSIVE_REFERENCE_STEPS = {
+    1: (1, 6, 17, 35),
+    2: (1, 6, 16, 23, 32),
+    3: (1, 6, 14, 22, 28, 33, 38, 57),
+    4: (1, 6, 13, 18, 26, 34, 47, 62),
+    5: (1, 5, 13, 22, 28, 40),
+    6: (1, 8, 14, 18, 25, 27, 49),
+}
+
 # Qt rich text ignores CSS max-width on <img>; use explicit pixel dimensions.
 GOAL_IMAGE_MAX_WIDTH = 140
 
 LEARNING_TASK_DESCRIPTION = (
-    "This task involves recreating this reference image as accurately as "
-    "possible in Krita. Below are step-by-step instructions on how to "
-    "produce the reference image.")
+    "In this learning phase, follow the step-by-step instructions in order to "
+    "create a simple drawing in Krita. Complete each step, then click Next to "
+    "continue. As you progress, reference images will appear at certain steps "
+    "to show how your canvas should look at that point, so you can check your "
+    "work and stay on track.")
 
 
 def _png_pixel_size(path):
@@ -51,8 +66,10 @@ def _png_pixel_size(path):
     return width, height
 
 
-def _goal_image_html(ref_name):
-    ref_path = os.path.join(IMAGES_DIR, ref_name)
+def _goal_image_html(src_relative):
+    """Build img tag; src_relative is under the plugin dir (forward slashes)."""
+    ref_path = os.path.join(
+        PLUGIN_DIR, src_relative.replace("/", os.path.sep))
     if not os.path.isfile(ref_path):
         return ""
     try:
@@ -62,13 +79,48 @@ def _goal_image_html(ref_name):
         disp_h = max(1, int(src_h * scale))
     except (OSError, ValueError):
         disp_w, disp_h = GOAL_IMAGE_MAX_WIDTH, 212
+    src_attr = html.escape(src_relative.replace("\\", "/"))
     return (
         "<p style='font-size:14px; font-weight:bold; color:#ddd;"
         " margin:0 0 8px 0;'>Reference image</p>"
         '<p style="margin:0 0 18px 0; text-align:center;">'
-        '<img src="images/%s" alt="Goal reference" width="%d" height="%d"'
+        '<img src="%s" alt="Goal reference" width="%d" height="%d"'
         ' style="border:1px solid #555; border-radius:4px;" /></p>'
-        % (html.escape(ref_name), disp_w, disp_h))
+        % (src_attr, disp_w, disp_h))
+
+
+def _checkpoint_step_for_progress(phase, step_number):
+    """Latest checkpoint step number <= current tutorial step."""
+    checkpoints = PROGRESSIVE_REFERENCE_STEPS.get(int(phase))
+    if not checkpoints:
+        return None
+    current = max(1, int(step_number))
+    active = None
+    for cp in checkpoints:
+        if cp <= current:
+            active = cp
+        else:
+            break
+    return active
+
+
+def _progressive_reference_src(phase, step_number):
+    """Relative URL path under plugin root for the current checkpoint image."""
+    cp = _checkpoint_step_for_progress(phase, step_number)
+    if cp is None:
+        return None
+    rel = "images/images-steps/tuto %d/step %d.png" % (int(phase), int(cp))
+    full = os.path.join(PLUGIN_DIR, rel.replace("/", os.path.sep))
+    if os.path.isfile(full):
+        return rel
+    return None
+
+
+def _learning_reference_html(phase, step_number):
+    src = _progressive_reference_src(phase, step_number)
+    if src:
+        return _goal_image_html(src)
+    return ""
 
 _ICON_RE = re.compile(r"\{([^}]+)\}")
 _STEP_PREFIX_RE = re.compile(r"^(Step \d+):\s*(.*)$", re.IGNORECASE | re.DOTALL)
@@ -93,6 +145,8 @@ def required_command_for_step(step_text):
         return "color wheel"
     if "eraser preset" in low or "use the eraser" in low:
         return "Eraser Preset"
+    if "round brush preset" in low:
+        return "Round brush preset"
     if "gradient" in low:
         return "Gradient Tool"
     if "line width" in low or "brush size" in low:
@@ -162,25 +216,42 @@ TUTORIAL_1_STEPS = [
     "Step 1: Click {Add layer} in Layers",
     "Step 2: Click the {Gradient Tool}",
     "Step 3: On the color wheel, pick light yellow",
-    "Step 4: Drag bottom-to-top on the canvas to make a gradient",
-    "Step 5: Create another gradient light blue, dragging from top-to-bottom",
-    "Step 6: Click {Add layer} in Layers (to create a new layer for drawing the sun)",
-    "Step 7: Click the {Ellipse Tool}",
-    "Step 8: On the color wheel, pick golden yellow",
-    "Step 9: Draw one big yellow circle (the sun)",
-    "Step 10: Click the {Fill Tool} and fill the circle",
-    "Step 11: Click the {Move Tool} and place the sun in the middle of the canvas",
-    "Step 12: Click the {Straight Line Tool}",
-    "Step 13: Adjust the width of the line you are drawing",
-    "Step 14: On the color wheel, pick orange, then draw the sun rays one by one",
-    "Step 15: Click {Add layer} in Layers (we will try to draw a smiley face on the sun :D)",
-    "Step 16: Click the {Freehand Brush Tool}",
-    "Step 17: On the color wheel, pick white",
-    "Step 18: Draw two eyes and a smile on the sun. It doesn't look very good...",
-    "Step 19: Use the {Eraser Preset} in the brush panel to remove the eyes and the smile we just drew. The layer created for the eyes and smile is no longer needed, so it can be removed if desired. To do this, we can use {Delete layer} in Layers",
-    "Step 20: Click the {Text Tool}, drag to define a text box, and type \"The Sun\". In Krita, text is created as its own layer by default",
-    "Step 21: Select the newly created text, then choose the brown color from the color wheel, and apply it to it",
-    "Step 22: Click the {Move Tool} and center the text on the canvas",
+    "Step 4: Drag from bottom to top on the canvas to make a gradient",
+    "Step 5: On the color wheel, pick light blue",
+    "Step 6: Create another gradient in light blue, dragging from top-to-bottom",
+    "Step 7: Click {Add layer} in Layers",
+    "Step 8: Click the {Ellipse Tool}",
+    "Step 9: On the color wheel, pick golden yellow",
+    "Step 10: Draw one big yellow circle (the sun)",
+    "Step 11: Click the {Fill Tool}",
+    "Step 12: Fill the circle",
+    "Step 13: To test, press {Move down} in Layers to try moving the sun layer down in the layer stack and see how it affects the image.",
+    "Step 14: Press {Move up} in Layers to bring the sun layer back to the order you had before, so we can continue the tutorial.",
+    "Step 15: Click the {Move Tool}",
+    "Step 16: Place the sun approximately at the top and in the middle of the canvas horizontally, as shown in the reference image.",
+    "Step 17: Click the {Straight Line Tool}",
+    "Step 18: Adjust the width of the line you are drawing",
+    "Step 19: On the color wheel, pick orange",
+    "Step 20: Draw the sun rays one by one",
+    "Step 21: Click {Add layer} in Layers",
+    "Step 22: Click the {Rectangle Tool}",
+    "Step 23: On the color wheel, pick dark blue",
+    "Step 24: Drag to draw a thin strip along the bottom of the canvas (the ground)",
+    "Step 25: Click the {Fill Tool}",
+    "Step 26: Click inside the ground strip to fill it",
+    "Step 27: Maybe it's better to get rid of it… Use {Delete layer} in Layers to remove the ground layer",
+    "Step 28: Click {Add layer} in Layers",
+    "Step 29: Click the {Freehand Brush Tool}",
+    "Step 30: On the color wheel, pick white",
+    "Step 31: Try to draw a smiley face on the sun :D (two eyes and a smile)",
+    "Step 32: It doesn't look very good... Use the {Eraser Preset} in the brush panel to remove the eyes and the smile we just drew.",
+    "Step 33: In the brush panel, switch back to the {Round brush preset}. This allows Krita to switch the mode from erasing back to Normal (writing/painting)",
+    "Step 34: The layer created for the eyes and smile is no longer needed, so you can remove it. To do this, use {Delete layer} in Layers",
+    "Step 35: Click the {Text Tool}",
+    "Step 36: Drag to define a text box, and type \"The Sun\". In Krita, text is created as its own layer by default",
+    "Step 37: Select the newly created text and choose the brown color from the color wheel and apply it to it",
+    "Step 38: Click the {Move Tool}",
+    "Step 39: Center the text on the canvas like the reference image shows",
 ]
 
 TUTORIAL_2_STEPS = [
@@ -190,23 +261,43 @@ TUTORIAL_2_STEPS = [
     "Step 4: Drag top-to-bottom on the canvas to make a gradient",
     "Step 5: Click {Add layer} in Layers",
     "Step 6: Click the {Rectangle Tool}",
-    "Step 7: On the color wheel, pick dark red then drag to draw the Olympic medal lanyard",
-    "Step 8: Click the {Move Tool} and center the shape on the canvas",
-    "Step 9: Click the {Straight Line Tool}",
-    "Step 10: Use the straight line tool to create the striped pattern on the Olympic medal lanyard",
-    "Step 11: Use the straight line tool to draw the connector between the lanyard and the medal",
-    "Step 12: Click the {Fill Tool}",
-    "Step 13: On the color wheel, pick yellow, and fill the top and bottom stripes of the lanyard",
-    "Step 14: On the color wheel, pick white, and fill the middle stripe of the lanyard",
-    "Step 15: Click {Add layer} in Layers",
-    "Step 16: Click the {Ellipse Tool}",
-    "Step 17: On the color wheel, pick black then drag to draw the circular Olympic medal",
-    "Step 18: Click the {Move Tool} to center the medal and connect it to the lanyard",
-    "Step 19: Click the {Ellipse Tool} to create another circle that outlines the medal",
-    "Step 20: Click the {Move Tool} to position the outline over the circular medal",
-    "Step 21: Click the {Text Tool}, drag to define a text box, and type \"1st\"",
-    "Step 22: Select the newly created text, then choose the dark red color from the color wheel, and apply it to it",
-    "Step 23: Click the {Move Tool} to center the text on the medal",
+    "Step 7: On the color wheel, pick dark red",
+    "Step 8: Drag to draw the Olympic medal lanyard",
+    "Step 9: To practice, press {Move down} in Layers to try moving the Olympic medal lanyard layer in the layer stack.",
+    "Step 10: Press {Move up} in Layers to bring the lanyard layer back to the order we had before, so we can continue the tutorial.",
+    "Step 11: Click the {Move Tool}",
+    "Step 12: Center the Olympic medal lanyard on the canvas",
+    "Step 13: Click the {Straight Line Tool}",
+    "Step 14: Adjust the width of the line you are drawing",
+    "Step 15: Use the {Straight Line Tool} to create the striped pattern on the Olympic medal lanyard",
+    "Step 16: Use the {Straight Line Tool} to draw the connector between the lanyard and the medal",
+    "Step 17: Click the {Fill Tool}",
+    "Step 18: On the color wheel, pick yellow",
+    "Step 19: Fill the top and bottom stripes of the lanyard",
+    "Step 20: On the color wheel, pick white",
+    "Step 21: Fill the middle stripe of the lanyard",
+    "Step 22: Click {Add layer} in Layers",
+    "Step 23: Click the {Ellipse Tool}",
+    "Step 24: On the color wheel, pick black",
+    "Step 25: Drag to draw the circular Olympic medal",
+    "Step 26: Click the {Move Tool}",
+    "Step 27: Center the medal and connect it to the lanyard",
+    "Step 28: Click {Add layer} in Layers",
+    "Step 29: Click the {Ellipse Tool} to create an inner circle that outlines the medal",
+    "Step 30: Click the {Move Tool}",
+    "Step 31: Position the inner circle over the circular medal",
+    "Step 32: Click {Add layer} in Layers",
+    "Step 33: Click the {Freehand Brush Tool}",
+    "Step 34: On the color wheel, pick white",
+    "Step 35: Try to draw the text \"1st\" to say that this is a medal for a winner",
+    "Step 36: Maybe it's better to use text for that, right? Let's first use the {Eraser Preset} in the brush panel to erase what we drew",
+    "Step 37: In the brush panel, switch back to the {Round brush preset}",
+    "Step 38: Use {Delete layer} in Layers to remove that layer",
+    "Step 39: Click the {Text Tool}",
+    "Step 40: Drag to define a text box, and type \"1st\".",
+    "Step 41: Select the newly created text and choose the dark red color from the color wheel to apply it to it",
+    "Step 42: Click the {Move Tool}",
+    "Step 43: Center the text on the medal",
 ]
 
 TUTORIAL_3_STEPS = [
@@ -216,31 +307,60 @@ TUTORIAL_3_STEPS = [
     "Step 4: Drag top-to-bottom on the canvas to make a gradient (the sky)",
     "Step 5: Click {Add layer} in Layers",
     "Step 6: Click the {Rectangle Tool}",
-    "Step 7: On the color wheel, pick dark green then drag to draw the grass beneath the house",
-    "Step 8: Click the {Fill Tool} then click inside the grass to fill it",
-    "Step 9: Click {Add layer} in Layers",
-    "Step 10: Click the {Rectangle Tool}",
-    "Step 11: On the color wheel, pick brown then drag to draw the body of the house",
-    "Step 12: Click the {Move Tool} to center the shape on the canvas",
-    "Step 13: Click the {Fill Tool} then click inside the house body to fill it",
-    "Step 14: Click {Add layer} in Layers",
-    "Step 15: Click the {Straight Line Tool}",
-    "Step 16: On the color wheel, pick red then drag to draw the triangular roof of the house",
-    "Step 17: Click the {Fill Tool} then click inside the roof to fill it",
-    "Step 18: Click {Add layer} in Layers",
-    "Step 19: Click the {Rectangle Tool}",
-    "Step 20: On the color wheel, pick yellow then drag to draw a square window on the house",
-    "Step 21: Click the {Fill Tool} then click inside the window to fill it",
-    "Step 22: Click the {Straight Line Tool} and set a smaller line width",
-    "Step 23: On the color wheel, pick black then drag to draw the window dividers",
-    "Step 24: Click {Add layer} in Layers",
-    "Step 25: Click the {Rectangle Tool}",
-    "Step 26: On the color wheel, pick light brown then drag to draw the house door",
-    "Step 27: Click the {Fill Tool} then click inside the door to fill it",
-    "Step 28: Click the {Freehand Brush Tool}",
-    "Step 29: On the color wheel, pick black then drag to draw the door knob",
-    "Step 30: Click the {Text Tool}, drag to define a text box, and type \"The House\"",
-    "Step 31: Click the {Move Tool} to center the text on the canvas",
+    "Step 7: On the color wheel, pick dark green",
+    "Step 8: Drag to draw the grass beneath the house",
+    "Step 9: Click the {Fill Tool}",
+    "Step 10: Click inside the grass to fill it",
+    "Step 11: Press {Move down} in Layers to try moving the grass layer down in the layer stack.",
+    "Step 12: Press {Move up} in Layers to bring the grass layer back to the order you had before, so you can continue the tutorial.",
+    "Step 13: Click {Add layer} in Layers",
+    "Step 14: Click the {Rectangle Tool}",
+    "Step 15: On the color wheel, pick brown",
+    "Step 16: Drag to draw the body of the house",
+    "Step 17: Click the {Move Tool}",
+    "Step 18: Center the house body on the canvas",
+    "Step 19: Click the {Fill Tool}",
+    "Step 20: Click inside the house body to fill it",
+    "Step 21: Click {Add layer} in Layers",
+    "Step 22: Click the {Straight Line Tool}",
+    "Step 23: On the color wheel, pick red",
+    "Step 24: Drag to draw the triangular roof of the house",
+    "Step 25: Click the {Fill Tool}",
+    "Step 26: Click inside the roof to fill it",
+    "Step 27: Click {Add layer} in Layers",
+    "Step 28: Click the {Rectangle Tool}",
+    "Step 29: On the color wheel, pick yellow",
+    "Step 30: Drag to draw one big square window on the house",
+    "Step 31: Click the {Fill Tool}",
+    "Step 32: Click inside the window to fill it",
+    "Step 33: Click the {Straight Line Tool}",
+    "Step 34: Set a smaller line width",
+    "Step 35: On the color wheel, pick black",
+    "Step 36: Drag to draw the window dividers",
+    "Step 37: Click {Add layer} in Layers",
+    "Step 38: Click the {Rectangle Tool}",
+    "Step 39: On the color wheel, pick light brown",
+    "Step 40: Drag to draw the house door",
+    "Step 41: Click the {Fill Tool}",
+    "Step 42: Click inside the door to fill it",
+    "Step 43: Click the {Freehand Brush Tool}",
+    "Step 44: On the color wheel, pick black",
+    "Step 45: Drag to draw the doorknob",
+    "Step 46: Click {Add layer} in Layers",
+    "Step 47: Click the {Ellipse Tool}",
+    "Step 48: On the color wheel, pick golden yellow",
+    "Step 49: Drag to draw a small sun in the sky",
+    "Step 50: Click the {Fill Tool}",
+    "Step 51: Fill the circle",
+    "Step 52: Click the {Move Tool}",
+    "Step 53: Place the sun approximately on the top of the canvas to the right",
+    "Step 54: It's not a sunny day, so we'd better erase the sun. Use the {Eraser Preset} in the brush panel to do so",
+    "Step 55: In the brush panel, switch back to the {Round brush preset}",
+    "Step 56: Use {Delete layer} in Layers to remove the sun layer",
+    "Step 57: Click the {Text Tool}",
+    "Step 58: Drag to define a text box, and type \"The House\".",
+    "Step 59: Click the {Move Tool}",
+    "Step 60: Center the text on the canvas like the reference image shows",
 ]
 
 TUTORIAL_4_STEPS = [
@@ -250,34 +370,65 @@ TUTORIAL_4_STEPS = [
     "Step 4: Drag top-to-bottom on the canvas to make a gradient",
     "Step 5: Click {Add layer} in Layers",
     "Step 6: Click the {Rectangle Tool}",
-    "Step 7: On the color wheel, pick dark orange then drag to draw the plant's pot, which forms its base",
-    "Step 8: Click the {Fill Tool} then click inside the pot to fill it",
-    "Step 9: Click the {Move Tool} to center the pot on the canvas",
-    "Step 10: Click the {Rectangle Tool} and drag to create the rim (the top edge of the pot)",
-    "Step 11: Click the {Fill Tool} then click inside the rim to fill it",
-    "Step 12: Click {Add layer} in Layers",
+    "Step 7: On the color wheel, pick dark orange",
+    "Step 8: Drag to draw the plant's pot, which forms its base",
+    "Step 9: Click the {Fill Tool}",
+    "Step 10: Click inside the pot to fill it",
+    "Step 11: Click the {Move Tool}",
+    "Step 12: Center the pot on the canvas",
     "Step 13: Click the {Rectangle Tool}",
-    "Step 14: On the color wheel, pick dark brown then drag to draw the plant's trunk",
-    "Step 15: Click the {Fill Tool} then click inside the trunk to fill it",
-    "Step 16: Click the {Move Tool} to center the trunk within the plant pot",
+    "Step 14: Drag to create the rim (the top edge of the pot)",
+    "Step 15: Click the {Fill Tool}",
+    "Step 16: Click inside the rim to fill it",
     "Step 17: Click {Add layer} in Layers",
-    "Step 18: Click the {Ellipse Tool}",
-    "Step 19: On the color wheel, pick green then drag to draw a leaf ball on top of the trunk",
-    "Step 20: Click the {Fill Tool} then click inside the leaf ball to fill it",
-    "Step 21: Click the {Move Tool} then position the leaf ball on the side of the trunk",
-    "Step 22: Click {Add layer} in Layers",
-    "Step 23: Click the {Ellipse Tool} to create a second leaf ball",
-    "Step 24: On the color wheel, pick a different shade of green then drag to draw a second leaf ball on top of the trunk",
-    "Step 25: Click the {Fill Tool} then click inside the leaf ball to fill it",
-    "Step 26: Click {Add layer} in Layers",
-    "Step 27: Click the {Ellipse Tool} to create a third leaf ball",
-    "Step 28: On the color wheel, pick a different shade of green then drag to draw a third leaf ball on top of the trunk",
-    "Step 29: Click the {Fill Tool} then click inside the leaf ball to fill it",
-    "Step 30: Click the {Move Tool} then position the leaf ball on the side of the trunk",
-    "Step 31: {Move down} in Layers to reorder the leaf balls until it looks better",
-    "Step 32: On the color wheel, pick black",
-    "Step 33: Click the {Text Tool}, drag to define a text box, and type \"The Tree\"",
-    "Step 34: Click the {Move Tool} to center the text on the canvas",
+    "Step 18: Click the {Rectangle Tool}",
+    "Step 19: On the color wheel, pick dark brown",
+    "Step 20: Drag to draw the plant's trunk",
+    "Step 21: Click the {Fill Tool}",
+    "Step 22: Click inside the trunk to fill it",
+    "Step 23: Click the {Move Tool}",
+    "Step 24: Center the trunk within the plant pot",
+    "Step 25: Click {Add layer} in Layers",
+    "Step 26: Click the {Ellipse Tool}",
+    "Step 27: On the color wheel, pick green",
+    "Step 28: Drag to draw a leaf ball on top of the trunk",
+    "Step 29: Click the {Fill Tool}",
+    "Step 30: Click inside the leaf ball to fill it",
+    "Step 31: Click the {Move Tool}",
+    "Step 32: Position the leaf ball on the side of the trunk",
+    "Step 33: Click {Add layer} in Layers",
+    "Step 34: Click the {Ellipse Tool} to create a second leaf ball",
+    "Step 35: On the color wheel, pick a different shade of green",
+    "Step 36: Drag to draw a second leaf ball on top of the trunk",
+    "Step 37: Click the {Fill Tool}",
+    "Step 38: Click inside the leaf ball to fill it",
+    "Step 39: Click {Add layer} in Layers",
+    "Step 40: Click the {Ellipse Tool} to create a third leaf ball",
+    "Step 41: On the color wheel, pick a different shade of green",
+    "Step 42: Drag to draw a third leaf ball on top of the trunk",
+    "Step 43: Click the {Fill Tool}",
+    "Step 44: Click inside the leaf ball to fill it",
+    "Step 45: Click the {Move Tool}",
+    "Step 46: Position the leaf ball on the side of the trunk",
+    "Step 47: Press {Move up} and {Move down} in Layers to reorder the leaf balls until it looks better",
+    "Step 48: Click {Add layer} in Layers",
+    "Step 49: Click the {Straight Line Tool}",
+    "Step 50: Adjust the width of the line you are drawing",
+    "Step 51: Set a smaller line width",
+    "Step 52: Draw short lines on the trunk to add some details for decoration",
+    "Step 53: This does not look very good… let's use the {Eraser Preset} in the brush panel to erase the lines",
+    "Step 54: In the brush panel, switch back to the {Round brush preset}",
+    "Step 55: Click the {Freehand Brush Tool}",
+    "Step 56: On the color wheel, pick red",
+    "Step 57: Draw small round fruits on the leaf balls to represent apples",
+    "Step 58: No, I think it's better to delete this. Use the {Eraser Preset} in the brush panel to erase that mark",
+    "Step 59: In the brush panel, switch back to the {Round brush preset}",
+    "Step 60: Use {Delete layer} in Layers to remove the current layer",
+    "Step 61: On the color wheel, pick black",
+    "Step 62: Click the {Text Tool}",
+    "Step 63: Drag to define a text box, and type \"The Tree\".",
+    "Step 64: Click the {Move Tool}",
+    "Step 65: Center the text on the canvas like the reference image shows",
 ]
 
 TUTORIAL_5_STEPS = [
@@ -286,24 +437,44 @@ TUTORIAL_5_STEPS = [
     "Step 3: On the color wheel, pick light green",
     "Step 4: Drag top-to-bottom on the canvas to make a gradient",
     "Step 5: Click the {Ellipse Tool}",
-    "Step 6: On the color wheel, pick light gray then drag to draw the plate for the fruit",
-    "Step 7: Click the {Fill Tool} then click inside the plate to fill it",
-    "Step 8: Click the {Move Tool} to center the plate on the canvas",
-    "Step 9: Click {Add layer} in Layers",
-    "Step 10: Click the {Ellipse Tool}",
-    "Step 11: On the color wheel, pick red then drag to draw an apple on the plate",
-    "Step 12: Click the {Fill Tool} then click inside the apple to fill it",
-    "Step 13: Click the {Move Tool} to place the apple in the middle of the plate",
-    "Step 14: Click the {Straight Line Tool} to draw the apple stem",
-    "Step 15: On the color wheel, pick brown then drag to draw the stem",
-    "Step 16: Click the {Ellipse Tool}",
-    "Step 17: On the color wheel, pick green then drag to draw a leaf on the stem",
-    "Step 18: Click the {Fill Tool} then click inside the leaf to fill it",
-    "Step 19: Click the {Freehand Brush Tool}",
-    "Step 20: Use the {Eraser Preset} in the brush panel to reshape the leaf so it looks more natural",
-    "Step 21: On the color wheel, pick black",
-    "Step 22: Click the {Text Tool}, drag to define a text box, and type \"The Apple\"",
-    "Step 23: Click the {Move Tool} to center the text on the canvas",
+    "Step 6: On the color wheel, pick light gray",
+    "Step 7: Drag to draw the plate for the fruit",
+    "Step 8: Click the {Fill Tool}",
+    "Step 9: Click inside the plate to fill it",
+    "Step 10: Click the {Move Tool}",
+    "Step 11: Center the plate on the canvas",
+    "Step 12: Click {Add layer} in Layers",
+    "Step 13: Click the {Ellipse Tool}",
+    "Step 14: On the color wheel, pick red",
+    "Step 15: Drag to draw an apple on the plate",
+    "Step 16: Click the {Fill Tool}",
+    "Step 17: Click inside the apple to fill it",
+    "Step 18: Click the {Move Tool}",
+    "Step 19: Place the apple in the middle of the plate",
+    "Step 20: Press {Move down} in Layers to move the apple behind the plate and see what it looks like.",
+    "Step 21: Press {Move down} in Layers to bring the apple layer back to the order you had before, so we can continue the tutorial.",
+    "Step 22: Click the {Straight Line Tool}",
+    "Step 23: Adjust the width of the line you are drawing",
+    "Step 24: On the color wheel, pick brown",
+    "Step 25: Drag to draw the apple stem",
+    "Step 26: Click the {Ellipse Tool}",
+    "Step 27: On the color wheel, pick green",
+    "Step 28: Drag to draw a leaf on the stem",
+    "Step 29: Click the {Fill Tool}",
+    "Step 30: Click inside the leaf to fill it",
+    "Step 31: Click the {Freehand Brush Tool}",
+    "Step 32: Use the {Eraser Preset} in the brush panel to reshape the leaf so it looks more natural",
+    "Step 33: In the brush panel, switch back to the {Round brush preset}",
+    "Step 34: Click {Add layer} in Layers",
+    "Step 35: Click the {Rectangle Tool}",
+    "Step 36: On the color wheel, pick dark green",
+    "Step 37: Drag to draw a rectangle on the canvas that will serve as the table on top of which the plate will be put",
+    "Step 38: It does not look good; no need to erase. We can use {Delete layer} in Layers directly to remove that layer",
+    "Step 39: On the color wheel, pick black",
+    "Step 40: Click the {Text Tool}",
+    "Step 41: Drag to define a text box, and type \"The Apple\".",
+    "Step 42: Click the {Move Tool}",
+    "Step 43: Center the text on the canvas like the reference image shows",
 ]
 
 TUTORIAL_6_STEPS = [
@@ -311,24 +482,54 @@ TUTORIAL_6_STEPS = [
     "Step 2: Click the {Gradient Tool}",
     "Step 3: On the color wheel, pick blue",
     "Step 4: Drag top-to-bottom on the canvas to make a gradient",
-    "Step 5: Create another gradient light cyan, dragging from bottom-to-top",
-    "Step 6: Click {Add layer} in Layers",
-    "Step 7: Click the {Freehand Brush Tool}",
-    "Step 8: On the color wheel, pick red, increase the brush size, then drag to draw the first rainbow ray.",
-    "Step 9: On the color wheel, pick orange then drag to draw the second rainbow ray.",
-    "Step 10: On the color wheel, pick yellow then drag to draw the third rainbow ray.",
-    "Step 11: On the color wheel, pick green then drag to draw the fourth rainbow ray.",
-    "Step 12: On the color wheel, pick blue then drag to draw the fifth rainbow ray.",
-    "Step 13: Click {Add layer} in Layers",
-    "Step 14: On the color wheel, pick white, then drag to draw a cloud beneath the rainbow",
-    "Step 15: Click the {Fill Tool} then click inside the cloud to fill it",
-    "Step 16: Click the {Freehand Brush Tool}",
-    "Step 17: On the color wheel, pick white, then drag to draw a second cloud beneath the rainbow",
-    "Step 18: Click the {Fill Tool} then click inside the cloud to fill it",
-    "Step 19: Click the {Freehand Brush Tool}, then fill in any remaining uncolored spots in the cloud",
-    "Step 20: On the color wheel, pick black",
-    "Step 21: Click the {Text Tool}, drag to define a text box, and type \"Color\"",
-    "Step 22: Click the {Move Tool} to center the text on the canvas",
+    "Step 5: On the color wheel, pick light cyan",
+    "Step 6: Create another gradient in light cyan, dragging from bottom-to-top",
+    "Step 7: Click {Add layer} in Layers",
+    "Step 8: Click the {Freehand Brush Tool}",
+    "Step 9: On the color wheel, pick red",
+    "Step 10: Increase the brush size",
+    "Step 11: Drag to draw the first rainbow ray",
+    "Step 12: Press {Move down} in Layers to try moving the rainbow layer under the gradient to see how it looks.",
+    "Step 13: Definitely not a good look. Press {Move up} in Layers to bring the rainbow layer back to the order we had before, so we can continue the tutorial.",
+    "Step 14: On the color wheel, pick orange",
+    "Step 15: Drag to draw the second rainbow ray",
+    "Step 16: On the color wheel, pick yellow",
+    "Step 17: Drag to draw the third rainbow ray",
+    "Step 18: On the color wheel, pick green",
+    "Step 19: Drag to draw the fourth rainbow ray",
+    "Step 20: On the color wheel, pick blue",
+    "Step 21: Drag to draw the fifth rainbow ray",
+    "Step 22: Click {Add layer} in Layers",
+    "Step 23: Click the {Freehand Brush Tool}",
+    "Step 24: On the color wheel, pick white",
+    "Step 25: Drag to draw a cloud beneath the rainbow",
+    "Step 26: Click the {Fill Tool}",
+    "Step 27: Click inside the cloud to fill it",
+    "Step 28: Click the {Freehand Brush Tool}",
+    "Step 29: On the color wheel, pick white",
+    "Step 30: Drag to draw a second cloud beneath the rainbow",
+    "Step 31: Click the {Fill Tool}",
+    "Step 32: Click inside the cloud to fill it",
+    "Step 33: Click the {Freehand Brush Tool}",
+    "Step 34: On the color wheel, pick white",
+    "Step 35: Fill in any remaining uncolored spots in the clouds",
+    "Step 36: Click {Add layer} in Layers",
+    "Step 37: Click the {Straight Line Tool}",
+    "Step 38: Adjust the width of the line you are drawing",
+    "Step 39: On the color wheel, pick gray",
+    "Step 40: Draw small short lines on the cloud to add more details on the cloud for decoration",
+    "Step 41: Click the {Rectangle Tool}",
+    "Step 42: Drag to draw small grey rectangles on the cloud to add more details on the cloud for decoration",
+    "Step 43: Click the {Ellipse Tool}",
+    "Step 44: Drag to draw small grey circles on the cloud to add more details on the cloud for decoration",
+    "Step 45: Use the {Eraser Preset} in the brush panel to erase all of that",
+    "Step 46: In the brush panel, switch back to the {Round brush preset}",
+    "Step 47: Use {Delete layer} in Layers to remove that layer",
+    "Step 48: On the color wheel, pick black",
+    "Step 49: Click the {Text Tool}",
+    "Step 50: Drag to define a text box, and type \"Color\".",
+    "Step 51: Click the {Move Tool}",
+    "Step 52: Center the text on the canvas like the reference image shows",
 ]
 
 LEARNING_STEPS = {
@@ -348,9 +549,7 @@ def format_learning_step_html(title, step_text, step_number, total_steps, phase=
         "<p style='font-size:14px; line-height:1.5; color:#ddd;"
         " margin:0 0 16px 0;'>%s</p>"
         % (html.escape(title), html.escape(LEARNING_TASK_DESCRIPTION)))
-    ref_name = REFERENCE_IMAGES.get(int(phase))
-    if ref_name:
-        html_out += _goal_image_html(ref_name)
+    html_out += _learning_reference_html(phase, step_number)
     html_out += (
         "<p style='font-size:13px; color:#aaa; margin:0 0 10px 0;'>"
         "Step %d of %d</p>"
@@ -367,9 +566,7 @@ def format_learning_steps_html(title, steps, phase=1):
         "<p style='font-size:14px; line-height:1.5; color:#ddd;"
         " margin:0 0 16px 0;'>%s</p>"
         % (html.escape(title), html.escape(LEARNING_TASK_DESCRIPTION)))
-    ref_name = REFERENCE_IMAGES.get(int(phase))
-    if ref_name:
-        html_out += _goal_image_html(ref_name)
+    html_out += _learning_reference_html(phase, 1)
     html_out += (
         "<ul style='margin:0; padding-left:24px; list-style-type:disc;'>")
     for step in steps:

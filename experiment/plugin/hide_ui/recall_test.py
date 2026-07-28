@@ -12,8 +12,7 @@ COMMANDS_DIR = os.path.join(PLUGIN_DIR, "commands")
 from .session_flow import run_tutorial_intro
 
 RECALL_QUESTION_TIME_SEC = 10
-RECALL_PHASE_TIME_SEC = 180          # 3 minutes for the whole recall block
-TRIAL_RECALL_QUESTION_TIME_SEC = 30
+TRIAL_RECALL_QUESTION_TIME_SEC = 10
 TRIAL_RECALL_QUESTION_COUNT = 5
 
 # Legacy alias
@@ -21,35 +20,45 @@ RECALL_TIME_SEC = RECALL_QUESTION_TIME_SEC
 
 RECALL_SIDE_PANEL = {
     "title": "Command recall test",
-    "body": (
-        "Some commands are hidden under white boxes on the Krita interface.\n\n"
-        "Read each question in the bar at the top of Krita.\n\n"
-        "Click the white box where you think that command is.\n\n"
-        "Answer as quickly and accurately as you can."),
+    "body": "",  # built by recall_side_panel_message()
 }
 
 RECALL_PRACTICE_SIDE_PANEL = {
     "title": "Command recall test",
-    "body": (
-        "This is a practice trial.\n\n"
-        "Some commands are hidden under white boxes on the Krita interface.\n\n"
-        "Read each question in the bar at the top of Krita.\n\n"
-        "Click the white box where you think that command is.\n\n"
-        "Answer as quickly and accurately as you can."),
+    "body": "",
 }
 
 RECALL_OPENING_SIDE_PANEL = {
     "title": "Recall: Layout A",
-    "body": (
-        "Before the new tutorials, recall where commands were in the "
-        "interface you learned in Session 1.\n\n"
-        "Some commands are hidden under white boxes.\n\n"
-        "Read each question at the top of Krita and click the matching white box."),
+    "body": "",
 }
+
+
+def _recall_instruction_body_html(question_time_sec, intro_paragraphs=()):
+    sec = max(1, int(question_time_sec))
+    parts = []
+    for para in intro_paragraphs:
+        text = str(para or "").strip()
+        if text:
+            parts.append("<p style='margin:10px 0;'>%s</p>" % text)
+    parts.append(
+        "<p style='margin:14px 0;'><b>Commands are hidden behind white boxes "
+        "on the Krita interface. Read each question, then click the white box "
+        "that hides the correct command for that question.</b></p>")
+    parts.append(
+        "<p style='margin:14px 0;'><b>Answer as fast as you can. You have at most "
+        "%d seconds per question.</b></p>" % sec)
+    parts.append(
+        "<p style='margin:14px 0;'>When you are ready, click "
+        "<b>Start first question</b> on the panel to the right.</p>")
+    return "".join(parts)
 
 RECALL_INTRO = {
     "title": RECALL_SIDE_PANEL["title"],
-    "body": RECALL_SIDE_PANEL["body"],
+    "body": (
+        "Commands are hidden behind white boxes on the Krita interface. "
+        "Read each question at the top and click the box that hides the correct "
+        "command. Answer as fast as you can; you have at most 10 seconds per question."),
 }
 
 # answer ids must match hide_ui recall overlay command ids (16 study targets).
@@ -126,12 +135,12 @@ RECALL_QUESTIONS_ALL = [
     },
     {
         "id": "raise_layer",
-        "prompt": "Where do you move a layer up?",
+        "prompt": "Where do you change layer order to bring a layer up?",
         "answer": "layer:bnRaise",
     },
     {
         "id": "lower_layer",
-        "prompt": "Where do you move a layer down?",
+        "prompt": "Where do you change layer order to bring a layer down?",
         "answer": "layer:bnLower",
     },
 ]
@@ -368,7 +377,7 @@ def prepare_recall_questions(trial=False):
 
 
 def recall_timing(trial=False):
-    """Per-question and whole-phase time limits for this recall block."""
+    """Per-question time limits for this recall block (no whole-phase cap)."""
     if trial:
         return {
             "trial": True,
@@ -379,17 +388,36 @@ def recall_timing(trial=False):
     return {
         "trial": False,
         "question_time_sec": RECALL_QUESTION_TIME_SEC,
-        "phase_time_sec": RECALL_PHASE_TIME_SEC,
+        "phase_time_sec": None,
         "question_count": len(RECALL_QUESTIONS_ALL),
     }
 
 
-def recall_side_panel_message(opening=False, practice=False):
+def recall_side_panel_message(opening=False, practice=False, question_time_sec=None):
+    if question_time_sec is None:
+        question_time_sec = (
+            TRIAL_RECALL_QUESTION_TIME_SEC if practice else RECALL_QUESTION_TIME_SEC)
     if opening:
-        return dict(RECALL_OPENING_SIDE_PANEL)
+        intro = (
+            "Before introducing the new tutorials, you will begin Session 2 "
+            "with a recall test to assess whether you still remember the "
+            "positions of the commands you learned in Session 1.")
+        return {
+            "title": RECALL_OPENING_SIDE_PANEL["title"],
+            "body": _recall_instruction_body_html(
+                question_time_sec, intro_paragraphs=(intro,)),
+        }
     if practice:
-        return dict(RECALL_PRACTICE_SIDE_PANEL)
-    return dict(RECALL_SIDE_PANEL)
+        intro = "This is a practice recall trial."
+        return {
+            "title": RECALL_PRACTICE_SIDE_PANEL["title"],
+            "body": _recall_instruction_body_html(
+                question_time_sec, intro_paragraphs=(intro,)),
+        }
+    return {
+        "title": RECALL_SIDE_PANEL["title"],
+        "body": _recall_instruction_body_html(question_time_sec),
+    }
 
 
 def run_recall_intro():
