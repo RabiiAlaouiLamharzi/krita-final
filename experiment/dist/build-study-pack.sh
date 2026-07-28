@@ -39,18 +39,64 @@ xattr -cr "$(pwd)" 2>/dev/null || true
 echo "Installing study plugin into your Krita profile…"
 bash "$(pwd)/study-pack/install-mac.sh"
 
+find_krita_app() {
+  local p found
+  for p in \
+    "/Applications/krita.app" \
+    "/Applications/Krita.app" \
+    "$HOME/Applications/krita.app" \
+    "$HOME/Applications/Krita.app" \
+    "$HOME/Desktop/krita.app" \
+    "$HOME/Desktop/Krita.app" \
+    "$HOME/Downloads/krita.app" \
+    "$HOME/Downloads/Krita.app"
+  do
+    if [ -d "$p" ]; then
+      echo "$p"
+      return 0
+    fi
+  done
+  found="$(mdfind 'kMDItemCFBundleIdentifier == "org.krita"' 2>/dev/null \
+    | grep -E '\.app$' | head -1 || true)"
+  if [ -n "$found" ] && [ -d "$found" ]; then
+    echo "$found"
+    return 0
+  fi
+  found="$(mdfind 'kMDItemFSName == "krita.app"c' 2>/dev/null \
+    | grep -E '\.app$' | head -1 || true)"
+  if [ -n "$found" ] && [ -d "$found" ]; then
+    echo "$found"
+    return 0
+  fi
+  return 1
+}
+
 echo ""
-echo "Opening official Krita…"
-if [ -d "/Applications/krita.app" ]; then
-  open -a "/Applications/krita.app" --args -nosplash
-elif [ -d "$HOME/Applications/krita.app" ]; then
-  open -a "$HOME/Applications/krita.app" --args -nosplash
-else
-  echo "ERROR: Krita.app not found."
-  echo "Install Krita 5.3.2 from https://krita.org/en/download/ then run this again."
-  read -r -p "Press Enter to close…"
-  exit 1
+echo "Opening Krita…"
+KRITA_APP=""
+if KRITA_APP="$(find_krita_app)"; then
+  echo "Found: $KRITA_APP"
+  open -a "$KRITA_APP" --args -nosplash
+  exit 0
 fi
+
+# Launch Services: works if Krita was opened at least once, even outside Applications.
+if open -a krita --args -nosplash 2>/dev/null \
+  || open -a Krita --args -nosplash 2>/dev/null; then
+  exit 0
+fi
+
+echo ""
+echo "ERROR: Krita.app not found on this Mac."
+echo ""
+echo "Do this, then run Launch Study again:"
+echo "  1. Install Krita from https://krita.org/en/"
+echo "  2. Drag Krita into the Applications folder"
+echo "  3. Open Krita once from Applications (click Open if macOS asks)"
+echo "  4. Quit Krita, then run this Launch Study.command again"
+echo ""
+read -r -p "Press Enter to close…"
+exit 1
 EOF
 chmod +x "$STAGE/Launch Study.command"
 
