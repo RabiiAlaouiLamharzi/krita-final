@@ -67,8 +67,20 @@
       display: flex;
       flex-direction: column;
     }
-    .card h2 {
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
       margin: 0 0 12px;
+    }
+    .card-title img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      display: block;
+    }
+    .card-title h2 {
+      margin: 0;
       font-size: 1.15rem;
       font-weight: 700;
     }
@@ -126,7 +138,10 @@
 
     <div class="grid">
       <section class="card">
-        <h2>Mac</h2>
+        <div class="card-title">
+          <img src="mac-logo.png" alt="" width="28" height="28" />
+          <h2>Mac</h2>
+        </div>
         <ol>
           <li>Install Krita. Drag it into <strong>Applications</strong>, then open it once.</li>
           <li>Download and unzip the study pack.</li>
@@ -144,7 +159,10 @@
       </section>
 
       <section class="card">
-        <h2>Windows</h2>
+        <div class="card-title">
+          <img src="windows-logo.png" alt="" width="28" height="28" />
+          <h2>Windows</h2>
+        </div>
         <ol>
           <li>Install Krita, then open it once.</li>
           <li>Download and unzip the study pack.</li>
