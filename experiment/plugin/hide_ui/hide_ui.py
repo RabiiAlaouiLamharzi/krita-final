@@ -53,7 +53,8 @@ NEXT_RECALL_STYLE = (
 TIMER_URGENT_SEC = 5
 TIMER_BLINK_MS = 400
 # Rebuild recall white boxes until dock/toolbar geometry settles (pre-Start).
-RECALL_OVERLAY_WARMUP_DELAYS_MS = (50, 150, 350, 700, 1200, 2000, 2800)
+# Keep this short: full prepare+embed on every rebuild made recall feel slow.
+RECALL_OVERLAY_WARMUP_DELAYS_MS = (80, 300, 700)
 RECALL_FEEDBACK_CORRECT = (
     "border: 3px solid #28a745; border-radius: 4px;"
     " background-color: rgba(40, 167, 69, 0.18);")
@@ -2533,8 +2534,14 @@ class HideUIExtension(Extension):
         if flags["presets_in_toolbar"]:
             if popup is None:
                 _log("ensure_presets: no widget to embed for profile %s" % profile)
+                for delay in (200, 600, 1200):
+                    QTimer.singleShot(
+                        delay,
+                        lambda q=qwin, p=profile: self._retry_toolbar_presets(q, p))
                 return
             self._embed_presets_in_toolbar(qwin)
+            self._trim_brush_presets(qwin)
+            self._ensure_toolbar_presets_visible(qwin)
             self._schedule_preset_arrow_suppression(
                 self._preset_popup_widget or popup)
         else:
@@ -2563,6 +2570,62 @@ class HideUIExtension(Extension):
             self._trim_brush_presets(qwin)
             self._fix_preset_gap(qwin)
             self._schedule_preset_gap_fix(qwin)
+
+    def _retry_toolbar_presets(self, qwin, profile):
+        if self._quitting or not _qt_alive(qwin):
+            return
+        from .layout_profiles import profile_flags
+        if not profile_flags(profile).get("presets_in_toolbar"):
+            return
+        if self._preset_popup_is_placed(qwin, profile):
+            self._ensure_toolbar_presets_visible(qwin)
+            return
+        popup = self._find_preset_popup_widget(qwin)
+        if popup is None:
+            _log("retry_toolbar_presets: still no preset widget")
+            return
+        self._preset_popup_widget = popup
+        self._presets_in_toolbar = False
+        self._embed_presets_in_toolbar(qwin)
+        self._trim_brush_presets(qwin)
+        self._ensure_toolbar_presets_visible(qwin)
+
+    def _ensure_toolbar_presets_visible(self, qwin):
+        """Keep toolbar brush strip visible (Session 2 A_C1 / A_C1_C2 / B)."""
+        if not _qt_alive(qwin) or self._quitting:
+            return
+        from .layout_profiles import profile_flags
+        profile = getattr(self, "_study_layout_profile", "A")
+        if not profile_flags(profile).get("presets_in_toolbar"):
+            return
+        try:
+            tb = self._find_brushes_toolbar(qwin)
+            if tb is not None:
+                tb.show()
+                tb.setVisible(True)
+            popup = self._preset_popup_widget
+            if popup is None or not _qt_alive(popup):
+                popup = self._find_preset_popup_widget(qwin)
+                self._preset_popup_widget = popup
+            if popup is not None and _qt_alive(popup):
+                popup.show()
+                self._configure_preset_horizontal(popup)
+                self._ensure_preset_chooser_visible(popup)
+                host = popup.parentWidget()
+                while host is not None and host.objectName() != "hideuiPresetToolbarHost":
+                    host = host.parentWidget()
+                if host is not None:
+                    host.show()
+                    host.setMinimumWidth(220)
+                    host.setMinimumHeight(28)
+                _log(
+                    "toolbar presets visible=%s size=%sx%s"
+                    % (
+                        popup.isVisible(),
+                        popup.width(),
+                        popup.height()))
+        except Exception:
+            _log(traceback.format_exc())
 
     def _recreate_preset_dock(self, qwin, popup):
         """Build a replacement PresetDocker around a surviving preset widget."""
@@ -2635,12 +2698,12 @@ class HideUIExtension(Extension):
 
         preset_title = (dock.windowTitle() if dock is not None else "") \
             or "Brush Presets"
-        strip_h = NATIVE_BRUSH_SLIDER_HEIGHT
+        strip_h = max(NATIVE_BRUSH_SLIDER_HEIGHT, 40)
         host = QWidget()
         host.setObjectName("hideuiPresetToolbarHost")
         host.setFixedHeight(strip_h)
         host.setMaximumHeight(strip_h)
-        host.setMinimumWidth(140)
+        host.setMinimumWidth(220)
         host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         lay = QHBoxLayout(host)
         lay.setContentsMargins(2, 0, 4, 0)
@@ -2651,6 +2714,7 @@ class HideUIExtension(Extension):
         lay.addWidget(title_lbl, 0, Qt.AlignVCenter)
         popup.setParent(host)
         lay.addWidget(popup, 1)
+        popup.setMinimumHeight(28)
         popup.setMaximumHeight(strip_h)
         popup.show()
         self._configure_preset_horizontal(popup)
@@ -2670,7 +2734,13 @@ class HideUIExtension(Extension):
         self._presets_in_toolbar = True
         host.show()
         tb.show()
+        tb.raise_()
         _log("brush presets embedded in BrushesAndStuff toolbar (same row)")
+        # Krita sometimes collapses the strip after layout; re-apply shortly.
+        for delay in (150, 500, 1200):
+            QTimer.singleShot(
+                delay,
+                lambda q=qwin: self._ensure_toolbar_presets_visible(q))
 
     def _unembed_presets_from_toolbar(self, qwin):
         # No early return on the _presets_in_toolbar flag: a soft detach
@@ -3844,7 +3914,7 @@ class HideUIExtension(Extension):
             self._lock_window(qwin, show=True)
             self._enforce_window_geometry()
             QApplication.processEvents()
-            self._build_recall_overlays(qwin)
+            self._build_recall_overlays(qwin, prepare=True)
             self._focus_canvas(qwin)
         except Exception:
             _log(traceback.format_exc())
@@ -5127,11 +5197,14 @@ class HideUIExtension(Extension):
             QToolTip.hideText()
             self._trim_brush_presets(qwin)
             QApplication.processEvents()
-            self._build_recall_overlays(qwin)
+            self._build_recall_overlays(qwin, prepare=True)
             self._start_recall_click_capture()
             self._start_position_guard()
             self._recall_overlay_generation += 1
-            self._schedule_recall_overlay_warmup(qwin)
+            # Warmups while Krita is hidden waste CPU and use wrong geometry.
+            # Schedule them after reveal instead (see _reveal_krita_for_active_recall).
+            if not getattr(self, "_recall_krita_hidden_until_start", False):
+                self._schedule_recall_overlay_warmup(qwin)
             self._set_tutorial_timer_visible(False)
             if getattr(self, "_recall_krita_hidden_until_start", False):
                 from .experiment import suppress_krita_ui
@@ -5513,13 +5586,13 @@ class HideUIExtension(Extension):
             _log(traceback.format_exc())
 
     def _schedule_recall_overlay_warmup(self, qwin):
-        """Place white boxes repeatedly before Start first question."""
+        """Place white boxes repeatedly after Krita is visible (light rebuilds)."""
         if not self._recall_active or not _qt_alive(qwin):
             return
         for delay in RECALL_OVERLAY_WARMUP_DELAYS_MS:
-            self._schedule_recall_overlay_rebuild(qwin, delay)
+            self._schedule_recall_overlay_rebuild(qwin, delay, prepare=False)
 
-    def _schedule_recall_overlay_rebuild(self, qwin, delay_ms):
+    def _schedule_recall_overlay_rebuild(self, qwin, delay_ms, prepare=False):
         """Rebuild recall overlays later; stale timers are ignored."""
         gen = self._recall_overlay_generation
         def run():
@@ -5529,16 +5602,17 @@ class HideUIExtension(Extension):
                 return
             if self._recall_question_answered:
                 return
-            self._build_recall_overlays(qwin)
+            self._build_recall_overlays(qwin, prepare=prepare)
         QTimer.singleShot(delay_ms, run)
 
-    def _build_recall_overlays(self, qwin):
+    def _build_recall_overlays(self, qwin, prepare=True):
         if not self._recall_active or not _qt_alive(qwin):
             return 0
         if self._recall_question_answered:
             return 0
         try:
-            self._prepare_recall_overlay_targets(qwin)
+            if prepare:
+                self._prepare_recall_overlay_targets(qwin)
             self._clear_recall_overlays(qwin)
             self._recall_command_widgets = []
             from .layout_profiles import profile_flags
@@ -5758,8 +5832,8 @@ class HideUIExtension(Extension):
         self._recall_remaining_sec = per_q
         self._update_recall_timer_display()
         self._set_recall_timer_visible(True)
-        for delay in (0, 400):
-            self._schedule_recall_overlay_rebuild(qwin, delay)
+        for delay in (0, 250, 700):
+            self._schedule_recall_overlay_rebuild(qwin, delay, prepare=False)
         QTimer.singleShot(80, lambda: self._position_recall_question_banner(qwin))
         if self._recall_timer is not None:
             self._recall_timer.stop()
