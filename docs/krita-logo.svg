@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Krita">
+  <circle cx="64" cy="64" r="64" fill="#3ea6f0"/>
+  <circle cx="64" cy="64" r="52" fill="#1a1a1a"/>
+  <path fill="#f07e3a" d="M36 28h18l22 32 14-18h20L78 78l24 34H84L64 84 50 104H32l22-32-18-26V28z"/>
+  <circle cx="92" cy="36" r="10" fill="#f5d76e"/>
+</svg>

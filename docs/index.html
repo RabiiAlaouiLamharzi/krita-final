@@ -4,45 +4,92 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Krita UI Learning Study</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0f1419;
-      --panel: #1a2332;
-      --text: #e8eef5;
-      --muted: #9aabbc;
-      --accent: #4a6fa5;
-      --accent-hover: #5a7fb5;
-      --line: #2a3648;
+      --bg: #ffffff;
+      --text: #1a1a1a;
+      --muted: #555555;
+      --line: #d0d0d0;
+      --accent: #3d6ea5;
+      --accent-hover: #2f5a8a;
+      --card: #ffffff;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-      background: radial-gradient(1200px 600px at 20% -10%, #1e2a3d, var(--bg));
+      font-family: "Roboto", sans-serif;
+      background: var(--bg);
       color: var(--text);
       line-height: 1.5;
       min-height: 100vh;
     }
     main {
-      max-width: 640px;
+      max-width: 960px;
       margin: 0 auto;
-      padding: 48px 24px 80px;
+      padding: 48px 24px 72px;
     }
-    h1 {
-      font-size: 1.85rem;
+    .intro {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      margin-bottom: 36px;
+    }
+    .intro img {
+      width: 72px;
+      height: 72px;
+      flex-shrink: 0;
+      display: block;
+    }
+    .intro h1 {
+      font-size: 1.75rem;
       font-weight: 700;
-      letter-spacing: -0.02em;
-      margin: 0 0 10px;
+      margin: 0 0 8px;
     }
-    .lead {
+    .intro p {
+      margin: 0;
       color: var(--muted);
       font-size: 1.05rem;
-      margin: 0 0 28px;
+      max-width: 36em;
     }
-    .downloads {
+    .grid {
       display: grid;
-      gap: 12px;
-      margin: 0 0 28px;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 0;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+    }
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
+    .card ol {
+      margin: 0 0 20px;
+      padding-left: 1.25rem;
+      color: var(--muted);
+      flex: 1;
+    }
+    .card li { margin: 8px 0; }
+    .card code {
+      font-family: "Roboto", monospace;
+      font-size: 0.92em;
+      background: #f0f0f0;
+      padding: 1px 5px;
+      border-radius: 0;
+    }
+    .card-actions {
+      display: grid;
+      gap: 10px;
+      margin-top: auto;
     }
     a.btn {
       display: block;
@@ -50,87 +97,70 @@
       text-decoration: none;
       background: var(--accent);
       color: #fff;
-      font-weight: 650;
-      font-size: 1.05rem;
-      padding: 16px 20px;
-      border-radius: 8px;
-      border: 1px solid transparent;
+      font-weight: 500;
+      font-size: 1rem;
+      padding: 14px 16px;
+      border-radius: 0;
+      border: none;
     }
     a.btn:hover { background: var(--accent-hover); }
-    a.btn.secondary {
-      background: transparent;
-      border-color: var(--line);
-      color: var(--text);
-    }
-    a.btn.secondary:hover { border-color: var(--accent); color: #fff; }
-    section {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 20px 22px;
-      margin-bottom: 14px;
-    }
-    section h2 {
-      margin: 0 0 10px;
-      font-size: 1.05rem;
-    }
-    ol {
-      margin: 0;
-      padding-left: 1.2rem;
-      color: var(--muted);
-    }
-    li { margin: 8px 0; }
-    code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.9em;
-      background: #0c1016;
-      padding: 1px 6px;
-      border-radius: 4px;
-    }
-    .help {
-      color: var(--muted);
-      font-size: 0.95rem;
-      margin: 20px 0 0;
+    @media (max-width: 720px) {
+      .grid { grid-template-columns: 1fr; }
+      .intro { flex-direction: column; align-items: flex-start; }
     }
   </style>
 </head>
 <body>
   <main>
-    <h1>Krita UI Learning Study</h1>
-    <p class="lead">
-      Follow these steps on your computer. Use the login details your experimenter sent you.
-    </p>
-
-    <div class="downloads">
-      <a class="btn" href="https://krita.org/en/" target="_blank" rel="noopener noreferrer">
-        1. Download Krita
-      </a>
-      <a class="btn secondary" id="dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/latest" target="_blank" rel="noopener noreferrer">
-        2. Download the study pack
-      </a>
+    <div class="intro">
+      <img src="krita-logo.svg" alt="Krita logo" width="72" height="72" />
+      <div>
+        <h1>Krita UI Learning Study</h1>
+        <p>
+          This study looks at how people learn tools and panels in a simplified
+          version of Krita. You will complete short guided tasks and a few
+          recall tests. Use the login details your experimenter sent you.
+        </p>
+      </div>
     </div>
 
-    <section>
-      <h2>On a Mac</h2>
-      <ol>
-        <li>Install Krita from the link above. Drag it into <strong>Applications</strong>, then open it once.</li>
-        <li>Download and unzip the study pack.</li>
-        <li><strong>Right‑click</strong> <code>Launch Study.command</code> → <strong>Open</strong> → <strong>Open</strong>.</li>
-        <li>Log in when Krita opens.</li>
-      </ol>
-    </section>
+    <div class="grid">
+      <section class="card">
+        <h2>Mac</h2>
+        <ol>
+          <li>Install Krita. Drag it into <strong>Applications</strong>, then open it once.</li>
+          <li>Download and unzip the study pack.</li>
+          <li>Double‑click <code>Launch Study.command</code>.</li>
+          <li>Log in when Krita opens.</li>
+        </ol>
+        <div class="card-actions">
+          <a class="btn" href="https://krita.org/en/" target="_blank" rel="noopener noreferrer">
+            Download Krita
+          </a>
+          <a class="btn dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/latest" target="_blank" rel="noopener noreferrer">
+            Download the study pack
+          </a>
+        </div>
+      </section>
 
-    <section>
-      <h2>On Windows</h2>
-      <ol>
-        <li>Install Krita from the link above, then open it once.</li>
-        <li>Download and unzip the study pack.</li>
-        <li>Double‑click <code>Launch Study.bat</code>. If Windows warns you, choose <strong>More info</strong> → <strong>Run anyway</strong>.</li>
-        <li>Log in when Krita opens.</li>
-      </ol>
-    </section>
-
-    <p class="help">If something does not work, message your experimenter — they can help you.</p>
+      <section class="card">
+        <h2>Windows</h2>
+        <ol>
+          <li>Install Krita, then open it once.</li>
+          <li>Download and unzip the study pack.</li>
+          <li>Double‑click <code>Launch Study.bat</code>. If Windows warns you, choose <strong>More info</strong> → <strong>Run anyway</strong>.</li>
+          <li>Log in when Krita opens.</li>
+        </ol>
+        <div class="card-actions">
+          <a class="btn" href="https://krita.org/en/" target="_blank" rel="noopener noreferrer">
+            Download Krita
+          </a>
+          <a class="btn dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/latest" target="_blank" rel="noopener noreferrer">
+            Download the study pack
+          </a>
+        </div>
+      </section>
+    </div>
   </main>
   <script>
     fetch("https://api.github.com/repos/RabiiAlaouiLamharzi/krita-final/releases/latest")
@@ -139,10 +169,11 @@
         if (!data || !data.assets) return;
         data.assets.forEach(function (a) {
           if (/KritaStudy-pack/i.test(a.name)) {
-            var el = document.getElementById("dl-study");
-            el.href = a.browser_download_url;
-            el.target = "_blank";
-            el.rel = "noopener noreferrer";
+            document.querySelectorAll(".dl-study").forEach(function (el) {
+              el.href = a.browser_download_url;
+              el.target = "_blank";
+              el.rel = "noopener noreferrer";
+            });
           }
         });
       })
