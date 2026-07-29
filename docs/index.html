@@ -159,7 +159,7 @@
           <a class="btn" href="https://krita.org/en/" target="_blank" rel="noopener noreferrer">
             Download Krita
           </a>
-          <a class="btn dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/latest" target="_blank" rel="noopener noreferrer">
+          <a class="btn dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/download/v1.1.2/KritaStudy-pack.zip" target="_blank" rel="noopener noreferrer">
             Download the study pack
           </a>
         </div>
@@ -180,29 +180,12 @@
           <a class="btn" href="https://krita.org/en/" target="_blank" rel="noopener noreferrer">
             Download Krita
           </a>
-          <a class="btn dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/latest" target="_blank" rel="noopener noreferrer">
+          <a class="btn dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/download/v1.1.2/KritaStudy-pack.zip" target="_blank" rel="noopener noreferrer">
             Download the study pack
           </a>
         </div>
       </section>
     </div>
   </main>
-  <script>
-    fetch("https://api.github.com/repos/RabiiAlaouiLamharzi/krita-final/releases/latest")
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) {
-        if (!data || !data.assets) return;
-        data.assets.forEach(function (a) {
-          if (/KritaStudy-pack/i.test(a.name)) {
-            document.querySelectorAll(".dl-study").forEach(function (el) {
-              el.href = a.browser_download_url;
-              el.target = "_blank";
-              el.rel = "noopener noreferrer";
-            });
-          }
-        });
-      })
-      .catch(function () {});
-  </script>
 </body>
 </html>
