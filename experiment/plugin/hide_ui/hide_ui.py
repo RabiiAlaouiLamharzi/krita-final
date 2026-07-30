@@ -523,7 +523,7 @@ class HideUIExtension(Extension):
         self._recall_phase_timer = None
         self._recall_remaining_sec = 0
         self._recall_phase_remaining_sec = None
-        self._recall_question_time_sec = 10
+        self._recall_question_time_sec = 15
         self._recall_phase_time_sec = None
         self._recall_meta = {}
         self._recall_question_answered = False
@@ -5691,7 +5691,7 @@ class HideUIExtension(Extension):
             and self._is_session1()
             and learn_num == 1
             and bool(trial))
-        q_sec = (self._recall_meta or {}).get("question_time_sec", 10)
+        q_sec = (self._recall_meta or {}).get("question_time_sec", 15)
         self._recall_panel_message = recall_side_panel_message(
             opening=opening,
             practice=practice,
@@ -6488,7 +6488,7 @@ class HideUIExtension(Extension):
         tut = SESSION_1_TUTORIALS[idx]
         which = idx + 1
         hold = HOLD_AFTER_TUTORIAL[which]
-        learn_sec = tut.get("learn_sec", 600)
+        learn_sec = tut.get("learn_sec", 720)
 
         def after_learn():
             skip = not tut.get("logged", True)

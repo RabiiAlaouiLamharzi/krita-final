@@ -11,8 +11,8 @@ COMMANDS_DIR = os.path.join(PLUGIN_DIR, "commands")
 
 from .session_flow import run_tutorial_intro
 
-RECALL_QUESTION_TIME_SEC = 10
-TRIAL_RECALL_QUESTION_TIME_SEC = 10
+RECALL_QUESTION_TIME_SEC = 15
+TRIAL_RECALL_QUESTION_TIME_SEC = 15
 TRIAL_RECALL_QUESTION_COUNT = 5
 
 # Legacy alias
@@ -58,7 +58,7 @@ RECALL_INTRO = {
     "body": (
         "Commands are hidden behind white boxes on the Krita interface. "
         "Read each question at the top and click the box that hides the correct "
-        "command. Answer as fast as you can; you have at most 10 seconds per question."),
+        "command. Answer as fast as you can; you have at most 15 seconds per question."),
 }
 
 # answer ids must match hide_ui recall overlay command ids (16 study targets).

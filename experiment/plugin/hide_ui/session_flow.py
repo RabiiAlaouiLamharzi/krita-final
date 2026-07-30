@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
 
 from .experiment import GatewayWindow, suppress_krita_ui, _log
 
-TUTORIAL_LEARN_SEC = 600        # 10 min — Session 1 tutorials 2–3, all Session 2 tutorials
+TUTORIAL_LEARN_SEC = 720        # 12 min — Session 1 tutorials 2–3, all Session 2 tutorials
 TUTORIAL_PRACTICE_SEC = 900     # 15 min — Session 1 practice trial only
 BREAK_SEC = 120                 # 2 min break between blocks
 TUTORIAL_1_TIME_SEC = TUTORIAL_PRACTICE_SEC

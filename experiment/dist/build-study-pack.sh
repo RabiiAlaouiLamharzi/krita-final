@@ -93,7 +93,12 @@ echo "Do this, then run Launch Study again:"
 echo "  1. Install Krita from https://krita.org/en/"
 echo "  2. Drag Krita into the Applications folder"
 echo "  3. Open Krita once from Applications (click Open if macOS asks)"
-echo "  4. Quit Krita, then run this Launch Study.command again"
+echo "  4. Quit Krita, then right-click this Launch Study.command"
+echo "     → Open With → Terminal"
+echo ""
+echo "If macOS blocks Launch Study (unknown developer / identity):"
+echo "  System Settings → Privacy & Security → Security → Allow / Open Anyway"
+echo "  then right-click → Open With → Terminal again."
 echo ""
 read -r -p "Press Enter to close…"
 exit 1
@@ -139,9 +144,21 @@ Krita UI Learning Study — setup pack
 
 1) Install Krita 5.3.2 from https://krita.org/en/download/
 2) Unzip this folder and keep it together.
-3) Mac: Right-click "Launch Study.command" → Open → Open
-   Windows: double-click "Launch Study.bat" (SmartScreen: More info → Run anyway)
-4) Log in with the credentials your experimenter sent you.
+
+Mac:
+  - Right-click "Launch Study.command" → Open With → Terminal
+    (do not double-click)
+  - If macOS says it cannot verify the developer/identity:
+      System Settings → Privacy & Security → scroll to Security →
+      Allow / Open Anyway for Launch Study, then right-click again →
+      Open With → Terminal
+  - After it works once, quit Krita if needed and run Launch Study again
+
+Windows:
+  - Double-click "Launch Study.bat"
+    (SmartScreen: More info → Run anyway)
+
+3) Log in with the credentials your experimenter sent you.
 
 This zip does NOT include Krita itself — only the study plugin installer.
 EOF
