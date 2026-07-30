@@ -37,15 +37,24 @@ REFERENCE_IMAGES = {
 
 IMAGES_STEPS_DIR = os.path.join(IMAGES_DIR, "images-steps")
 
-# Step numbers at which the side-panel reference image updates (phase = tutorial 1–6).
-PROGRESSIVE_REFERENCE_STEPS = {
-    1: (1, 6, 17, 35),
-    2: (1, 6, 16, 21, 30),
-    3: (1, 6, 14, 22, 28, 33, 38, 57),
-    4: (1, 6, 13, 18, 26, 34, 49, 64),
-    5: (1, 5, 13, 22, 28, 40),
-    6: (1, 8, 14, 18, 24, 27, 45),
-}
+_STEP_RANGE_RE = re.compile(r"^step (\d+)-(\d+)\.png$", re.IGNORECASE)
+_STEP_END_RE = re.compile(r"^step (\d+)-end\.png$", re.IGNORECASE)
+_STEP_SINGLE_RE = re.compile(r"^step (\d+)\.png$", re.IGNORECASE)
+
+
+def _plugin_file_exists(rel):
+    full = os.path.join(PLUGIN_DIR, rel.replace("/", os.path.sep))
+    return os.path.isfile(full)
+
+
+def _tutorial_fallback_rel(phase):
+    ref_name = REFERENCE_IMAGES.get(int(phase))
+    if not ref_name:
+        return None
+    rel = "images/%s" % ref_name
+    if _plugin_file_exists(rel):
+        return rel.replace("\\", "/")
+    return None
 
 # Qt rich text ignores CSS max-width on <img>; use explicit pixel dimensions.
 GOAL_IMAGE_MAX_WIDTH = 140
@@ -89,35 +98,66 @@ def _goal_image_html(src_relative):
         % (src_attr, disp_w, disp_h))
 
 
-def _checkpoint_step_for_progress(phase, step_number):
-    """Latest checkpoint step number <= current tutorial step."""
-    checkpoints = PROGRESSIVE_REFERENCE_STEPS.get(int(phase))
-    if not checkpoints:
-        return None
+def _reference_ranges(phase):
+    """Return sorted (start, end, filename) tuples from images/images-steps/tuto N/."""
+    tuto_dir = os.path.join(IMAGES_STEPS_DIR, "tuto %d" % int(phase))
+    ranges = []
+    if not os.path.isdir(tuto_dir):
+        return ranges
+    for name in os.listdir(tuto_dir):
+        if not name.lower().endswith(".png"):
+            continue
+        match = _STEP_RANGE_RE.match(name)
+        if match:
+            ranges.append((int(match.group(1)), int(match.group(2)), name))
+            continue
+        match = _STEP_END_RE.match(name)
+        if match:
+            ranges.append((int(match.group(1)), None, name))
+            continue
+        match = _STEP_SINGLE_RE.match(name)
+        if match:
+            step = int(match.group(1))
+            ranges.append((step, step, name))
+    ranges.sort(key=lambda item: item[0])
+    return ranges
+
+
+def _range_image_rel(phase, filename):
+    return "images/images-steps/tuto %d/%s" % (int(phase), filename)
+
+
+def _reference_filename_for_step(phase, step_number, total_steps=None):
+    """Pick the range PNG whose step span contains step_number."""
     current = max(1, int(step_number))
-    active = None
-    for cp in checkpoints:
-        if cp <= current:
-            active = cp
-        else:
-            break
-    return active
-
-
-def _progressive_reference_src(phase, step_number):
-    """Relative URL path under plugin root for the current checkpoint image."""
-    cp = _checkpoint_step_for_progress(phase, step_number)
-    if cp is None:
-        return None
-    rel = "images/images-steps/tuto %d/step %d.png" % (int(phase), int(cp))
-    full = os.path.join(PLUGIN_DIR, rel.replace("/", os.path.sep))
-    if os.path.isfile(full):
-        return rel
+    total = int(total_steps) if total_steps else None
+    ranges = _reference_ranges(phase)
+    for start, end, filename in ranges:
+        hi = end if end is not None else total
+        if hi is None:
+            hi = current
+        if start <= current <= hi:
+            return filename
+    if ranges and total and current <= total:
+        start, _end, filename = ranges[-1]
+        if current >= start:
+            return filename
     return None
 
 
-def _learning_reference_html(phase, step_number):
-    src = _progressive_reference_src(phase, step_number)
+def _progressive_reference_src(phase, step_number, total_steps=None):
+    """Relative URL path under plugin root for the current step-range image."""
+    filename = _reference_filename_for_step(
+        phase, step_number, total_steps=total_steps)
+    if filename:
+        rel = _range_image_rel(phase, filename)
+        if _plugin_file_exists(rel):
+            return rel.replace("\\", "/")
+    return _tutorial_fallback_rel(phase)
+
+
+def _learning_reference_html(phase, step_number, total_steps=None):
+    src = _progressive_reference_src(phase, step_number, total_steps=total_steps)
     if src:
         return _goal_image_html(src)
     return ""
@@ -416,19 +456,20 @@ TUTORIAL_4_STEPS = [
     "Step 52: On the color wheel, pick light brown",
     "Step 53: Adjust the width of the line you are drawing (25–30 px)",
     "Step 54: Draw lines on the trunk to create bark texture",
-    "Step 55: This does not look very good… let's use the {Eraser Preset} in the brush panel to erase the lines",
-    "Step 56: In the brush panel, switch back to the {Round brush preset}",
-    "Step 57: Click the {Freehand Brush Tool}",
-    "Step 58: On the color wheel, pick red",
-    "Step 59: Draw small round fruits on the leaf balls to represent apples",
-    "Step 60: No, I think it's better to delete this. Use the {Eraser Preset} in the brush panel to erase that mark",
-    "Step 61: Use {Delete layer} in Layers to remove the current layer",
-    "Step 62: In the brush panel, switch back to the {Round brush preset}",
-    "Step 63: On the color wheel, pick black",
-    "Step 64: Click the {Text Tool}",
-    "Step 65: Drag to define a text box, and type \"The Tree\".",
-    "Step 66: Click the {Move Tool}",
-    "Step 67: Center the text on the canvas like the reference image shows",
+    "Step 55: This does not look very good… first click the {Freehand Brush Tool}",
+    "Step 56: Next, let's use the {Eraser Preset} in the brush panel to erase the lines",
+    "Step 57: In the brush panel, switch back to the {Round brush preset}",
+    "Step 58: Click the {Freehand Brush Tool}",
+    "Step 59: On the color wheel, pick red",
+    "Step 60: Draw small round fruits on the leaf balls to represent apples",
+    "Step 61: No, I think it's better to delete this. Use the {Eraser Preset} in the brush panel to erase that mark",
+    "Step 62: Use {Delete layer} in Layers to remove the current layer",
+    "Step 63: In the brush panel, switch back to the {Round brush preset}",
+    "Step 64: On the color wheel, pick black",
+    "Step 65: Click the {Text Tool}",
+    "Step 66: Drag to define a text box, and type \"The Tree\".",
+    "Step 67: Click the {Move Tool}",
+    "Step 68: Center the text on the canvas like the reference image shows",
 ]
 
 TUTORIAL_5_STEPS = [
@@ -436,45 +477,46 @@ TUTORIAL_5_STEPS = [
     "Step 2: Click the {Gradient Tool}",
     "Step 3: On the color wheel, pick light green",
     "Step 4: Drag top to bottom on the canvas to make a gradient",
-    "Step 5: Click the {Ellipse Tool}",
-    "Step 6: On the color wheel, pick light gray",
-    "Step 7: Drag to draw a gray plate, as shown in the reference image",
-    "Step 8: Click the {Fill Tool}",
-    "Step 9: Click inside the plate to fill it",
-    "Step 10: Click the {Move Tool}",
-    "Step 11: Center the plate on the canvas",
-    "Step 12: Click {Add layer} in Layers",
-    "Step 13: Click the {Ellipse Tool}",
-    "Step 14: On the color wheel, pick red",
-    "Step 15: Drag to draw an apple on the plate",
-    "Step 16: Click the {Fill Tool}",
-    "Step 17: Click inside the apple to fill it",
-    "Step 18: Click the {Move Tool}",
-    "Step 19: Place the apple in the middle of the plate",
-    "Step 20: Press {Move down} in Layers to move the apple behind the plate and see what it looks like.",
-    "Step 21: Press {Move up} in Layers to bring the apple layer back to the order you had before, so we can continue the tutorial.",
-    "Step 22: Click the {Straight Line Tool}",
-    "Step 23: Adjust the width of the line you are drawing (25–30 px)",
-    "Step 24: On the color wheel, pick brown",
-    "Step 25: Drag to draw the apple stem",
-    "Step 26: Click the {Ellipse Tool}",
-    "Step 27: On the color wheel, pick green",
-    "Step 28: Drag to draw a leaf on the stem",
-    "Step 29: Click the {Fill Tool}",
-    "Step 30: Click inside the leaf to fill it",
-    "Step 31: Click the {Freehand Brush Tool}",
-    "Step 32: Use the {Eraser Preset} in the brush panel to reshape the leaf so it looks more natural",
-    "Step 33: In the brush panel, switch back to the {Round brush preset}",
-    "Step 34: Click {Add layer} in Layers",
-    "Step 35: Click the {Rectangle Tool}",
-    "Step 36: On the color wheel, pick dark green",
-    "Step 37: Drag to draw a rectangle on the canvas that will serve as the table on which the plate sits",
-    "Step 38: It does not look good! Use {Delete layer} in Layers to remove the rectangle layer",
-    "Step 39: On the color wheel, pick black",
-    "Step 40: Click the {Text Tool}",
-    "Step 41: Drag to define a text box, and type \"The Apple\".",
-    "Step 42: Click the {Move Tool}",
-    "Step 43: Center the text on the canvas like the reference image shows",
+    "Step 5: Click {Add layer} in Layers",
+    "Step 6: Click the {Ellipse Tool}",
+    "Step 7: On the color wheel, pick light gray",
+    "Step 8: Drag to draw a gray plate, as shown in the reference image",
+    "Step 9: Click the {Fill Tool}",
+    "Step 10: Click inside the plate to fill it",
+    "Step 11: Click the {Move Tool}",
+    "Step 12: Center the plate on the canvas",
+    "Step 13: Click {Add layer} in Layers",
+    "Step 14: Click the {Ellipse Tool}",
+    "Step 15: On the color wheel, pick red",
+    "Step 16: Drag to draw an apple on the plate",
+    "Step 17: Click the {Fill Tool}",
+    "Step 18: Click inside the apple to fill it",
+    "Step 19: Click the {Move Tool}",
+    "Step 20: Place the apple in the middle of the plate",
+    "Step 21: Press {Move down} in Layers to move the apple behind the plate and see what it looks like.",
+    "Step 22: Press {Move up} in Layers to bring the apple layer back to the order you had before, so we can continue the tutorial.",
+    "Step 23: Click the {Straight Line Tool}",
+    "Step 24: Adjust the width of the line you are drawing (25–30 px)",
+    "Step 25: On the color wheel, pick brown",
+    "Step 26: Drag to draw the apple stem",
+    "Step 27: Click the {Ellipse Tool}",
+    "Step 28: On the color wheel, pick green",
+    "Step 29: Drag to draw a leaf on the stem",
+    "Step 30: Click the {Fill Tool}",
+    "Step 31: Click inside the leaf to fill it",
+    "Step 32: Click the {Freehand Brush Tool}",
+    "Step 33: Use the {Eraser Preset} in the brush panel to reshape the leaf so it looks more natural",
+    "Step 34: In the brush panel, switch back to the {Round brush preset}",
+    "Step 35: Click {Add layer} in Layers",
+    "Step 36: Click the {Rectangle Tool}",
+    "Step 37: On the color wheel, pick dark green",
+    "Step 38: Drag to draw a rectangle on the canvas that will serve as the table on which the plate sits",
+    "Step 39: It does not look good! Use {Delete layer} in Layers to remove the rectangle layer",
+    "Step 40: On the color wheel, pick black",
+    "Step 41: Click the {Text Tool}",
+    "Step 42: Drag to define a text box, and type \"The Apple\".",
+    "Step 43: Click the {Move Tool}",
+    "Step 44: Center the text on the canvas like the reference image shows",
 ]
 
 TUTORIAL_6_STEPS = [
@@ -487,7 +529,7 @@ TUTORIAL_6_STEPS = [
     "Step 7: Click {Add layer} in Layers",
     "Step 8: Click the {Freehand Brush Tool}",
     "Step 9: On the color wheel, pick red",
-    "Step 10: Adjust the width of the line you are drawing (35–45 px)",
+    "Step 10: Adjust the width of the line you are drawing (65–75 px)",
     "Step 11: Drag to draw the first rainbow ray",
     "Step 12: Press {Move down} in Layers to try moving the rainbow layer under the gradient to see how it looks.",
     "Step 13: Definitely not a good look. Press {Move up} in Layers to bring the rainbow layer back to the order we had before.",
@@ -510,7 +552,7 @@ TUTORIAL_6_STEPS = [
     "Step 30: Click inside the cloud to fill it",
     "Step 31: Click {Add layer} in Layers",
     "Step 32: Click the {Straight Line Tool}",
-    "Step 33: Adjust the width of the line you are drawing",
+    "Step 33: Adjust the width of the line you are drawing (35–40 px)",
     "Step 34: On the color wheel, pick gray",
     "Step 35: Draw small short lines on the cloud to add more details for decoration",
     "Step 36: Click the {Rectangle Tool}",
@@ -545,7 +587,7 @@ def format_learning_step_html(title, step_text, step_number, total_steps, phase=
         "<p style='font-size:14px; line-height:1.5; color:#ddd;"
         " margin:0 0 16px 0;'>%s</p>"
         % (html.escape(title), html.escape(LEARNING_TASK_DESCRIPTION)))
-    html_out += _learning_reference_html(phase, step_number)
+    html_out += _learning_reference_html(phase, step_number, total_steps=total_steps)
     html_out += (
         "<p style='font-size:13px; color:#aaa; margin:0 0 10px 0;'>"
         "Step %d of %d</p>"

@@ -6747,18 +6747,25 @@ class HideUIExtension(Extension):
             learn_num=which, layout_after=target_profile)
 
     def _session2_after_tutorial_recall(self, qwin):
+        from .session_flow import session2_tutorial_count, BREAK_MESSAGE_SESSION2_FINAL
+
         learn_num = int(getattr(self, "_pending_recall_learn_num", 0) or 0) \
             or (self._session_tutorial_index + 1)
+        cond = self.session.get("condition") if self.session else "A"
+        total = session2_tutorial_count(cond)
 
         def after_survey(_responses=None):
-            from .session_flow import BREAK_MESSAGE_SESSION2_FINAL
+            if learn_num >= total:
+                self._session_tutorial_index += 1
+                self._session2_finish_survey(qwin)
+                return
 
             def after_break(q):
                 self._session_tutorial_index += 1
                 self._session2_next_tutorial(q)
 
             break_body = None
-            if learn_num >= 3:
+            if learn_num >= total - 1:
                 break_body = BREAK_MESSAGE_SESSION2_FINAL["body"]
             self._run_break(
                 qwin, after_break, learn_num=learn_num, break_body=break_body)
