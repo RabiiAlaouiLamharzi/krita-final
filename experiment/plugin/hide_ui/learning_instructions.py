@@ -37,14 +37,14 @@ REFERENCE_IMAGES = {
 
 IMAGES_STEPS_DIR = os.path.join(IMAGES_DIR, "images-steps")
 
-# Step numbers at which the side-panel reference image updates (phase = tutorial 1–6).
+# Fallback checkpoint markers (used only if folder scan fails). Prefer on-disk files.
 PROGRESSIVE_REFERENCE_STEPS = {
     1: (1, 6, 17, 35),
-    2: (1, 6, 16, 21, 30),
+    2: (1, 6, 16, 23, 32),
     3: (1, 6, 14, 22, 28, 33, 38, 57),
-    4: (1, 6, 13, 18, 26, 34, 49, 64),
+    4: (1, 6, 13, 18, 26, 34, 47, 62),
     5: (1, 5, 13, 22, 28, 40),
-    6: (1, 8, 14, 18, 24, 27, 45),
+    6: (1, 8, 14, 18, 25, 27, 49),
 }
 
 # Qt rich text ignores CSS max-width on <img>; use explicit pixel dimensions.
@@ -53,9 +53,33 @@ GOAL_IMAGE_MAX_WIDTH = 140
 LEARNING_TASK_DESCRIPTION = (
     "In this learning phase, follow the step-by-step instructions in order to "
     "create a simple drawing in Krita. Complete each step, then click Next to "
-    "continue. As you progress, reference images will appear at certain steps "
-    "to show how your canvas should look at that point, so you can check your "
-    "work and stay on track.")
+    "continue. A reference image shows how your canvas should look so you can "
+    "check your work and stay on track.")
+
+_STEP_IMAGE_CACHE = {}
+
+
+def _list_step_image_numbers(phase):
+    """Sorted step numbers that have a PNG on disk for this tutorial."""
+    phase = int(phase)
+    if phase in _STEP_IMAGE_CACHE:
+        return _STEP_IMAGE_CACHE[phase]
+    folder = os.path.join(IMAGES_STEPS_DIR, "tuto %d" % phase)
+    nums = []
+    if os.path.isdir(folder):
+        for name in os.listdir(folder):
+            if not name.startswith("step ") or not name.endswith(".png"):
+                continue
+            mid = name[len("step "):-len(".png")].strip()
+            try:
+                nums.append(int(mid))
+            except ValueError:
+                continue
+    nums = tuple(sorted(set(nums)))
+    if not nums:
+        nums = tuple(PROGRESSIVE_REFERENCE_STEPS.get(phase, ()))
+    _STEP_IMAGE_CACHE[phase] = nums
+    return nums
 
 
 def _png_pixel_size(path):
@@ -90,8 +114,8 @@ def _goal_image_html(src_relative):
 
 
 def _checkpoint_step_for_progress(phase, step_number):
-    """Latest checkpoint step number <= current tutorial step."""
-    checkpoints = PROGRESSIVE_REFERENCE_STEPS.get(int(phase))
+    """Latest available checkpoint step number <= current tutorial step."""
+    checkpoints = _list_step_image_numbers(phase)
     if not checkpoints:
         return None
     current = max(1, int(step_number))
@@ -101,18 +125,39 @@ def _checkpoint_step_for_progress(phase, step_number):
             active = cp
         else:
             break
+    # Before the first checkpoint image, still show the first available image.
+    if active is None:
+        active = checkpoints[0]
     return active
 
 
 def _progressive_reference_src(phase, step_number):
-    """Relative URL path under plugin root for the current checkpoint image."""
+    """Relative URL path under plugin root for the current reference image.
+
+    Always prefers an on-disk step PNG when possible; falls back to the full
+    tutorial goal image so no learning step is left without a reference.
+    """
+    phase = int(phase)
     cp = _checkpoint_step_for_progress(phase, step_number)
-    if cp is None:
-        return None
-    rel = "images/images-steps/tuto %d/step %d.png" % (int(phase), int(cp))
-    full = os.path.join(PLUGIN_DIR, rel.replace("/", os.path.sep))
-    if os.path.isfile(full):
-        return rel
+    if cp is not None:
+        rel = "images/images-steps/tuto %d/step %d.png" % (phase, int(cp))
+        full = os.path.join(PLUGIN_DIR, rel.replace("/", os.path.sep))
+        if os.path.isfile(full):
+            return rel
+        # Checkpoint listed but file missing: walk backward through available.
+        for older in reversed(_list_step_image_numbers(phase)):
+            if older > int(cp):
+                continue
+            rel_try = "images/images-steps/tuto %d/step %d.png" % (phase, older)
+            full_try = os.path.join(PLUGIN_DIR, rel_try.replace("/", os.path.sep))
+            if os.path.isfile(full_try):
+                return rel_try
+    name = REFERENCE_IMAGES.get(phase)
+    if name:
+        rel = "images/%s" % name
+        full = os.path.join(PLUGIN_DIR, rel.replace("/", os.path.sep))
+        if os.path.isfile(full):
+            return rel
     return None
 
 
