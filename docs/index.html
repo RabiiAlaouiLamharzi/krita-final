@@ -15,6 +15,8 @@
       --line: #d0d0d0;
       --accent: #3d6ea5;
       --accent-hover: #2f5a8a;
+      --danger: #c0392b;
+      --danger-hover: #a93226;
       --card: #ffffff;
     }
     * { box-sizing: border-box; }
@@ -125,6 +127,10 @@
       border: none;
     }
     a.btn:hover { background: var(--accent-hover); }
+    a.btn-danger {
+      background: var(--danger);
+    }
+    a.btn-danger:hover { background: var(--danger-hover); }
     @media (max-width: 720px) {
       .grid { grid-template-columns: 1fr; }
       .intro { flex-direction: column; align-items: flex-start; }
@@ -190,6 +196,9 @@
           <a class="btn dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/download/v1.1.9/KritaStudy-pack.zip" target="_blank" rel="noopener noreferrer">
             Download the study pack
           </a>
+          <a class="btn btn-danger" href="Remove%20Study.command" download>
+            Remove study mode
+          </a>
         </div>
       </section>
 
@@ -210,6 +219,9 @@
           </a>
           <a class="btn dl-study" href="https://github.com/RabiiAlaouiLamharzi/krita-final/releases/download/v1.1.9/KritaStudy-pack.zip" target="_blank" rel="noopener noreferrer">
             Download the study pack
+          </a>
+          <a class="btn btn-danger" href="Remove-Study-Windows.zip" download>
+            Remove study mode
           </a>
         </div>
       </section>

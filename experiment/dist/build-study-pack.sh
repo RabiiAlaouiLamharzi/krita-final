@@ -105,6 +105,29 @@ exit 1
 EOF
 chmod +x "$STAGE/Launch Study.command"
 
+cat > "$STAGE/Remove Study.command" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+cd "$(cd "$(dirname "$0")" && pwd)"
+xattr -cr "$(pwd)" 2>/dev/null || true
+bash "$(pwd)/study-pack/uninstall-mac.sh"
+EOF
+chmod +x "$STAGE/Remove Study.command"
+
+cat > "$STAGE/Remove Study.bat" <<'EOF'
+@echo off
+setlocal
+cd /d "%~dp0"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0study-pack\uninstall-windows.ps1"
+if errorlevel 1 (
+  echo Remove failed.
+  pause
+  exit /b 1
+)
+pause
+endlocal
+EOF
+
 cat > "$STAGE/Launch Study.bat" <<'EOF'
 @echo off
 setlocal
@@ -161,6 +184,11 @@ Windows:
     (SmartScreen: More info → Run anyway)
 
 3) Log in with the credentials your experimenter sent you.
+
+When the study is finished:
+  Mac: right-click "Remove Study.command" → Open With → Terminal
+  Windows: double-click "Remove Study.bat"
+  Then open Krita normally from Applications / Start menu.
 
 This zip does NOT include Krita itself — only the study plugin installer.
 EOF
