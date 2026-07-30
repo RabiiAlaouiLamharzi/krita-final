@@ -155,7 +155,8 @@ if exist "%ProgramFiles%\Krita\bin\krita.exe" (
   goto :done
 )
 echo ERROR: Could not find krita.exe.
-echo Install Krita 5.3.2 from https://krita.org/en/download/ then run this again.
+echo Install Krita 5.3.3 from https://krita.org/en/download/ then run this again.
+echo Do not install Krita 6.
 pause
 exit /b 1
 :done
@@ -165,7 +166,7 @@ EOF
 cat > "$STAGE/README-PARTICIPANT.txt" <<'EOF'
 Krita UI Learning Study — setup pack
 
-1) Install Krita 5.3.2 from https://krita.org/en/download/
+1) Install Krita 5.3.3 from https://krita.org/en/download/ (not Krita 6)
 2) Unzip this folder and keep it together.
 
 Mac:

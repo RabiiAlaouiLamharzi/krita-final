@@ -18,45 +18,28 @@ rm -f "$KRITA_SUPPORT/shortcuts/study_none.shortcuts"
 rm -f "$KRITA_SUPPORT/css_styles/Study_Large_Text.svg"
 rm -f "$HOME/krita_hide_ui_log.txt"
 if [ -f "$KRITA_PREFS" ]; then
-  python3 - "$KRITA_PREFS" <<'PY'
-import os, re, sys
-prefs = sys.argv[1]
-text = open(prefs).read() if os.path.isfile(prefs) else ""
-text = re.sub(r"\nState=[^\n]*", "", text)
-text = re.sub(r"^DockWidget [^\n]*/DockArea=[^\n]*\n?", "", text, flags=re.M)
-
-def set_root(key, value):
-    global text
-    pat = r"^%s=.*$" % re.escape(key)
-    line = "%s=%s" % (key, value)
-    if re.search(pat, text, flags=re.M):
-        text = re.sub(pat, line, text, flags=re.M)
-    else:
-        text = text.rstrip() + "\n" + line + "\n"
-
-def set_section(section, key, value):
-    global text
-    header = "[%s]" % section
-    if header not in text:
-        text += "\n%s\n" % header
-    block = re.search(r"\[%s\][^\[]*" % re.escape(section), text, flags=re.S)
-    body = block.group(0) if block else header + "\n"
-    pat = r"^%s=.*$" % re.escape(key)
-    line = "%s=%s" % (key, value)
-    if re.search(pat, body, flags=re.M):
-        body = re.sub(pat, line, body, flags=re.M)
-    else:
-        body = body.rstrip() + "\n" + line + "\n"
-    if block:
-        text = text[:block.start()] + body + text[block.end():]
-    else:
-        text = text + body
-
-set_root("showStatusBar", "true")
-set_section("python", "enable_hide_ui", "false")
-set_section("Shortcut Schemes", "Current Scheme", "Default")
-open(prefs, "w").write(text)
-PY
+  TMP="$(mktemp)"
+  tr -d '\r' < "$KRITA_PREFS" | sed '/^State=/d' | sed '/^DockWidget .*\/DockArea=/d' > "$TMP" || true
+  if grep -q '^showStatusBar=' "$TMP" 2>/dev/null; then
+    sed -i.bak 's/^showStatusBar=.*/showStatusBar=true/' "$TMP"
+    rm -f "$TMP.bak"
+  else
+    printf 'showStatusBar=true\n' >> "$TMP"
+  fi
+  if grep -q '^enable_hide_ui=' "$TMP" 2>/dev/null; then
+    sed -i.bak 's/^enable_hide_ui=.*/enable_hide_ui=false/' "$TMP"
+    rm -f "$TMP.bak"
+  elif grep -q '^\[python\]$' "$TMP" 2>/dev/null; then
+    awk 'BEGIN{d=0} /^\[python\]$/{print;print "enable_hide_ui=false";d=1;next} {print}' "$TMP" > "$TMP.out"
+    mv "$TMP.out" "$TMP"
+  else
+    printf '\n[python]\nenable_hide_ui=false\n' >> "$TMP"
+  fi
+  if grep -q '^Current Scheme=' "$TMP" 2>/dev/null; then
+    sed -i.bak 's/^Current Scheme=.*/Current Scheme=Default/' "$TMP"
+    rm -f "$TMP.bak"
+  fi
+  mv "$TMP" "$KRITA_PREFS"
 fi
 echo ""
 echo "Study mode removed."

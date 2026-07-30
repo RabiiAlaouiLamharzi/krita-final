@@ -49,10 +49,21 @@ mkdir -p "$ROOT/layout_states"
 # Drop cached layout blobs so dock positions are rebuilt with the fixed preset strip.
 rm -f "$ROOT/layout_states/"*.state 2>/dev/null || true
 
-python3 "$ROOT/scripts/patch_kritarc.py" "$KRITA_PREFS"
+bash "$ROOT/scripts/patch_kritarc.sh" "$KRITA_PREFS"
+
+if [ ! -d "$PLUGIN_DEST" ] || [ ! -f "$KRITA_SUPPORT/pykrita/hide_ui.desktop" ]; then
+  echo "ERROR: study plugin files were not installed." >&2
+  exit 1
+fi
+if ! grep -q '^enable_hide_ui=true' "$KRITA_PREFS" 2>/dev/null \
+  && ! grep -q 'enable_hide_ui=true' "$KRITA_PREFS" 2>/dev/null; then
+  echo "ERROR: could not enable the study plugin in kritarc." >&2
+  exit 1
+fi
 
 echo "Installed experiment plugin to:"
 echo "  $PLUGIN_DEST"
+echo "Study plugin enabled in kritarc."
 if [ -n "${KRITA_APP:-}" ]; then
   echo "Launch with: open \"$KRITA_APP\" --args -nosplash"
 else

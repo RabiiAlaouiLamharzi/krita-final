@@ -2,11 +2,11 @@
 
 Krita UI learning study — plugin + packaging for **macOS** and **Windows** participant downloads.
 
-**Standard Krita version: 5.3.2** (same minor on both platforms).
+**Standard Krita version: 5.3.3** (same minor on both platforms). Do not use Krita 6.
 
 ## Participant download (recommended)
 
-1. Install **Krita 5.3.2** from [krita.org/download](https://krita.org/en/download/)
+1. Install **Krita 5.3.3** from [krita.org/download](https://krita.org/en/download/)
 2. Open the [download page](https://rabiialaouilamharzi.github.io/krita-final/) **or** [Releases](https://github.com/RabiiAlaouiLamharzi/krita-final/releases) and get **KritaStudy-pack.zip**
 3. Unzip → run **Launch Study** (Mac: Right‑click → Open; Windows: double‑click the `.bat`)
 4. Log in with experimenter credentials
