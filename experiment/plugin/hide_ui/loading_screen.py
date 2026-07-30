@@ -10,7 +10,7 @@ _FULLSCREEN_FLAGS = (
 
 
 class LoadingWindow(QWidget):
-    """One full-screen opaque cover for learning and recall prep (not breaks)."""
+    """Full-screen opaque cover for learning/recall prep (not breaks)."""
 
     def __init__(self):
         super().__init__(None)
@@ -59,6 +59,7 @@ class LoadingWindow(QWidget):
         lay.addLayout(bar_row)
         lay.addStretch(1)
         self._guard = None
+        self._raise_only = False
 
     def _virtual_desktop_geometry(self):
         geo = QRect()
@@ -77,14 +78,26 @@ class LoadingWindow(QWidget):
         if not geo.isNull():
             self.setGeometry(geo)
 
-    def show_loading(self):
+    def _on_guard(self):
+        if not self.isVisible():
+            return
+        if self._raise_only:
+            # Keep cover on top without hiding Krita underneath.
+            self.show()
+            self.raise_()
+            return
+        suppress_krita_ui(self)
+        self.raise_()
+
+    def show_loading(self, raise_only=False):
+        self._raise_only = bool(raise_only)
         if self._guard is None:
             self._guard = QTimer()
             self._guard.setInterval(50)
-            self._guard.timeout.connect(lambda: suppress_krita_ui(self))
+            self._guard.timeout.connect(self._on_guard)
         self._guard.start()
         self._apply_fullscreen()
-        suppress_krita_ui(self)
+        self._on_guard()
         self.show()
         self.raise_()
         self.activateWindow()
@@ -102,4 +115,5 @@ class LoadingWindow(QWidget):
     def dismiss(self):
         if self._guard is not None:
             self._guard.stop()
+        self._raise_only = False
         self.hide()

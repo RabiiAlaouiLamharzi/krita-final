@@ -49,8 +49,9 @@ def _recall_instruction_body_html(question_time_sec, intro_paragraphs=()):
         "<p style='margin:14px 0;'><b>Answer as fast as you can. You have at most "
         "%d seconds per question.</b></p>" % sec)
     parts.append(
-        "<p style='margin:14px 0;'>When you are ready, click "
-        "<b>Start first question</b> on the panel to the right.</p>")
+        "<p style='margin:14px 0;'>Please wait a moment while the recall "
+        "interface is prepared. The first question will start "
+        "<b>automatically</b>.</p>")
     return "".join(parts)
 
 RECALL_INTRO = {
