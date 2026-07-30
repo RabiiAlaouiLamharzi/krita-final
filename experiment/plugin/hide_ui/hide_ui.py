@@ -6421,11 +6421,9 @@ class HideUIExtension(Extension):
             return
         self._pending_break_learn_num = int(learn_num)
         self._pending_break_body = break_body
-        layout = getattr(self, "_study_layout_profile", "A")
-        self._prepare_study_canvas(
-            qwin,
-            lambda ok: self._start_break_window(qwin, after_fn, ok),
-            label="break", layout_after=layout)
+        # No canvas/loading prep for breaks — go straight to the break screen.
+        self._hide_loading_screen()
+        self._start_break_window(qwin, after_fn, True)
 
     def _start_break_window(self, qwin, after_fn, ok):
         from .session_flow import run_timed_break, BREAK_SEC
