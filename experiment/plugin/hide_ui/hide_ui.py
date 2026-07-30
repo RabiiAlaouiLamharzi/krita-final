@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QApplication, QTreeWidget, QAbstractButton, QToolBar, QStackedWidget,
     QHBoxLayout, QMainWindow, QPushButton, QAbstractItemView, QSizePolicy,
     QWidgetAction, QDialog, QLineEdit, QVBoxLayout, QFormLayout, QTextEdit, QMenu,
-    QToolTip, QMessageBox)
+    QToolTip, QMessageBox, QListView)
 
 MAC_CLOSE_SIZE = 16
 STUDY_TOP_BAR_H = 36
@@ -29,6 +29,9 @@ STUDY_TOOLBARS = (STUDY_CHROME_TOOLBAR,) + NATIVE_TOOLBARS
 NATIVE_BRUSH_SLIDER_WIDTH = 150   # Krita sliderLabels mode (kis_paintop_box.cc)
 NATIVE_BRUSH_SLIDER_WIDTH_COMPACT = 120
 NATIVE_BRUSH_SLIDER_HEIGHT = 32   # Krita toolbar ButtonSize default
+PRESET_STRIP_HEIGHT = NATIVE_BRUSH_SLIDER_HEIGHT
+PRESET_ICON_SIZE = 24
+PRESET_ICON_CELL = 28
 TIMER_STYLE_NORMAL = (
     "color: #1a1a1a; font-size: 16px; font-weight: bold;"
     "padding: 2px 14px; background: #fff3cd; border-radius: 4px;")
@@ -423,7 +426,7 @@ DEFAULT_DOCK_HEIGHTS = {
     "KisLayerBox": 240,
 }
 BOTTOM_PRESET_DOCK_HEIGHT = 48
-TOP_PRESET_DOCK_HEIGHT = 52
+TOP_PRESET_DOCK_HEIGHT = PRESET_STRIP_HEIGHT
 BOTTOM_TOOLBOX_DOCK_HEIGHT = 52
 
 
@@ -572,6 +575,7 @@ class HideUIExtension(Extension):
         self._learning_phase_finished = False
         self._study_brush_size = None
         self._brush_size_sync_hooked = False
+        self._brush_preset_keepalive_armed = False
         self._phase_transition_busy = False
 
     def _halt_deferred_work(self):
@@ -2111,19 +2115,59 @@ class HideUIExtension(Extension):
         if root is None or not _qt_alive(root):
             return
         root.show()
-        root.setMinimumHeight(28)
-        root.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        root.setMinimumHeight(PRESET_STRIP_HEIGHT - 4)
+        root.setMaximumHeight(PRESET_STRIP_HEIGHT)
+        root.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._apply_preset_icon_metrics(root)
         for chooser in root.findChildren(QWidget):
             if chooser.metaObject().className() != "KisResourceItemChooser":
                 continue
             chooser.show()
-            chooser.setMinimumHeight(28)
-            chooser.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            chooser.setMinimumHeight(PRESET_STRIP_HEIGHT - 4)
+            chooser.setMaximumHeight(PRESET_STRIP_HEIGHT)
+            chooser.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             for view in chooser.findChildren(QAbstractItemView):
                 view.show()
-                view.setMinimumHeight(28)
+                view.setMinimumHeight(PRESET_STRIP_HEIGHT - 4)
+                view.setMaximumHeight(PRESET_STRIP_HEIGHT)
                 view.setMinimumWidth(120)
-                view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def _apply_preset_icon_metrics(self, root):
+        """Keep thumbnails sharp inside the 32px strip (fixed icon cell, no stretch)."""
+        if root is None or not _qt_alive(root):
+            return
+        icon = QSize(PRESET_ICON_SIZE, PRESET_ICON_SIZE)
+        cell = QSize(PRESET_ICON_CELL, PRESET_STRIP_HEIGHT)
+        for view in root.findChildren(QAbstractItemView):
+            try:
+                if hasattr(view, "setIconSize"):
+                    view.setIconSize(icon)
+                if hasattr(view, "setGridSize"):
+                    view.setGridSize(cell)
+                if hasattr(view, "setUniformItemSizes"):
+                    view.setUniformItemSizes(True)
+                if hasattr(view, "setSpacing"):
+                    view.setSpacing(2)
+                if hasattr(view, "setFlow"):
+                    view.setFlow(QListView.LeftToRight)
+                if hasattr(view, "setWrapping"):
+                    view.setWrapping(False)
+            except Exception:
+                pass
+        for view in root.findChildren(QListView):
+            try:
+                view.setViewMode(QListView.IconMode)
+                view.setMovement(QListView.Static)
+                view.setResizeMode(QListView.Adjust)
+                view.setWrapping(False)
+                view.setFlow(QListView.LeftToRight)
+                view.setIconSize(icon)
+                view.setGridSize(cell)
+                view.setUniformItemSizes(True)
+                view.setSpacing(2)
+            except Exception:
+                pass
 
     def _configure_top_preset_docker(self, preset):
         """Horizontal brush strip across the top (A_C1 / A_C1_C2 / B)."""
@@ -2479,6 +2523,7 @@ class HideUIExtension(Extension):
                     pass
         # setListViewMode re-shows the scroll arrows; trim again afterwards.
         self._trim_preset_chooser_extras(root)
+        self._apply_preset_icon_metrics(root)
 
     def _schedule_preset_arrow_suppression(self, root):
         """Krita re-shows preset scroll arrows on every resize; keep killing them."""
@@ -2682,6 +2727,9 @@ class HideUIExtension(Extension):
                         title = (dock.windowTitle() if dock is not None else "") \
                             or "Brush Presets"
                         title_lbl.setText("  " + title)
+                    host.setFixedHeight(PRESET_STRIP_HEIGHT)
+                    host.setMinimumHeight(PRESET_STRIP_HEIGHT)
+                self._apply_preset_icon_metrics(popup)
                 if dock is not None:
                     self._park_preset_dock_for_toolbar_embed(qwin, dock)
                 return
@@ -2713,11 +2761,12 @@ class HideUIExtension(Extension):
 
         preset_title = (dock.windowTitle() if dock is not None else "") \
             or "Brush Presets"
-        strip_h = max(NATIVE_BRUSH_SLIDER_HEIGHT, 40)
+        strip_h = PRESET_STRIP_HEIGHT
         host = QWidget()
         host.setObjectName("hideuiPresetToolbarHost")
         host.setFixedHeight(strip_h)
         host.setMaximumHeight(strip_h)
+        host.setMinimumHeight(strip_h)
         host.setMinimumWidth(220)
         host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         lay = QHBoxLayout(host)
@@ -2729,11 +2778,12 @@ class HideUIExtension(Extension):
         lay.addWidget(title_lbl, 0, Qt.AlignVCenter)
         popup.setParent(host)
         lay.addWidget(popup, 1)
-        popup.setMinimumHeight(28)
-        popup.setMaximumHeight(strip_h)
+        popup.setMinimumHeight(PRESET_STRIP_HEIGHT - 4)
+        popup.setMaximumHeight(PRESET_STRIP_HEIGHT)
         popup.show()
         self._configure_preset_horizontal(popup)
         self._ensure_preset_chooser_visible(popup)
+        self._apply_preset_icon_metrics(popup)
 
         action = QWidgetAction(tb)
         action.setObjectName("hideuiPresetToolbarAction")
@@ -7548,7 +7598,14 @@ class HideUIExtension(Extension):
         popup = self._preset_popup_widget
         if popup is not None and popup not in roots:
             roots.append(popup)
+        if not roots:
+            found = self._find_preset_popup_widget(qwin)
+            if found is not None:
+                self._preset_popup_widget = found
+                roots.append(found)
         for root in roots:
+            if root is None or not _qt_alive(root):
+                continue
             self._reset_brush_preset_filter(root)
             self._trim_preset_chooser_extras(root)
             self._ensure_preset_chooser_visible(root)
@@ -7566,12 +7623,73 @@ class HideUIExtension(Extension):
                     if not keep_rows:
                         _log("brush presets: no whitelist match (%d rows visible)" % rows)
                         continue
+                    keep_set = set(keep_rows)
                     for row in range(rows):
-                        view.setRowHidden(row, row not in keep_rows)
+                        view.setRowHidden(row, row not in keep_set)
+                    for row in keep_rows:
+                        view.setRowHidden(row, False)
+                    view.show()
+                    chooser.show()
+                    self._apply_preset_icon_metrics(root)
                     names = [self._preset_row_stem(model, r) for r in keep_rows]
                     _log("brush presets: showing %s" % names)
         self._hook_study_brush_size_on_presets(qwin)
         self._fix_preset_gap(qwin)
+        if not getattr(self, "_brush_preset_keepalive_armed", False):
+            self._brush_preset_keepalive_armed = True
+            for delay in (200, 600, 1500, 3000):
+                QTimer.singleShot(
+                    delay,
+                    lambda q=qwin: self._keep_brush_presets_visible(q))
+
+    def _keep_brush_presets_visible(self, qwin):
+        """Re-apply whitelist and icon metrics after delayed layout changes."""
+        if self._quitting or not _qt_alive(qwin):
+            self._brush_preset_keepalive_armed = False
+            return
+        if not (self._tutorial_active or self._recall_active):
+            self._brush_preset_keepalive_armed = False
+            return
+        try:
+            from .layout_profiles import profile_flags
+            profile = getattr(self, "_study_layout_profile", "A")
+            if profile_flags(profile).get("presets_in_toolbar"):
+                self._ensure_toolbar_presets_visible(qwin)
+            self._brush_preset_keepalive_armed = True
+            roots = []
+            dock = self._dock_by_name(qwin, "PresetDocker")
+            if dock is not None:
+                roots.append(dock)
+            popup = self._preset_popup_widget or self._find_preset_popup_widget(qwin)
+            if popup is not None and popup not in roots:
+                self._preset_popup_widget = popup
+                roots.append(popup)
+            for root in roots:
+                if root is None or not _qt_alive(root):
+                    continue
+                self._reset_brush_preset_filter(root)
+                self._ensure_preset_chooser_visible(root)
+                for chooser in root.findChildren(QWidget):
+                    if chooser.metaObject().className() != "KisResourceItemChooser":
+                        continue
+                    for view in chooser.findChildren(QAbstractItemView):
+                        model = view.model()
+                        if model is None or model.rowCount() <= 0:
+                            continue
+                        keep_rows = self._pick_brush_preset_rows(model)
+                        if not keep_rows:
+                            continue
+                        keep_set = set(keep_rows)
+                        for row in range(model.rowCount()):
+                            view.setRowHidden(row, row not in keep_set)
+                        for row in keep_rows:
+                            view.setRowHidden(row, False)
+                        view.show()
+                        self._apply_preset_icon_metrics(root)
+        except Exception:
+            _log(traceback.format_exc())
+        finally:
+            self._brush_preset_keepalive_armed = False
 
     def _on_add_paint_layer(self):
         """Add a paint layer via the Python API (reliable when bnAdd menu is stripped)."""
