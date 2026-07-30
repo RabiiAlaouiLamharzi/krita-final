@@ -52,9 +52,11 @@ NEXT_RECALL_STYLE = (
     " QPushButton:pressed { background: #3a5f95; }")
 TIMER_URGENT_SEC = 5
 TIMER_BLINK_MS = 400
-# Rebuild recall white boxes until dock/toolbar geometry settles (pre-Start).
-# Keep this short: full prepare+embed on every rebuild made recall feel slow.
-RECALL_OVERLAY_WARMUP_DELAYS_MS = (80, 300, 700)
+# Rebuild recall white boxes until dock/toolbar geometry settles.
+# Used during covered auto-start so the participant never sees half-built UI.
+RECALL_OVERLAY_WARMUP_DELAYS_MS = (120, 400, 850)
+# Extra beat after prep finishes so the full-screen cover never drops too early.
+LOADING_EXTRA_SETTLE_MS = 1000
 RECALL_FEEDBACK_CORRECT = (
     "border: 3px solid #28a745; border-radius: 4px;"
     " background-color: rgba(40, 167, 69, 0.18);")
@@ -529,6 +531,7 @@ class HideUIExtension(Extension):
         self._recall_question_answered = False
         self._recall_waiting_for_next = False
         self._recall_awaiting_first_question = False
+        self._recall_auto_starting = False
         self._recall_krita_hidden_until_start = False
         self._recall_mask_state = []
         self._recall_question_banner = None
@@ -1452,7 +1455,8 @@ class HideUIExtension(Extension):
                 self._run_session2(qwin)
             else:
                 _log("gateway done: polished reveal")
-                self._arm_loading_screen("Preparing workspace…", 3)
+                self._arm_loading_screen(
+                    "Preparing workspace…", 3, title="Preparing workspace")
                 self._setup_after_gateway(qwin, light=False, defer_apply=False)
                 self._lock_window(qwin, show=False)
 
@@ -1633,7 +1637,8 @@ class HideUIExtension(Extension):
                 title = msg.get("title", RECALL_SIDE_PANEL["title"])
                 body = msg.get("body", RECALL_SIDE_PANEL["body"])
                 on_start = None
-                if self._recall_awaiting_first_question:
+                if self._recall_awaiting_first_question and not getattr(
+                        self, "_recall_auto_starting", False):
                     on_start = self._on_recall_start_from_panel
                 panel.show_recall_instructions_panel(
                     layout["video_pos"], layout["video_size"], title, body,
@@ -1673,8 +1678,9 @@ class HideUIExtension(Extension):
         except Exception:
             _log(traceback.format_exc())
 
-    def _arm_loading_screen(self, message="Loading workspace…", percent=0):
-        """Show the loading overlay immediately and paint before blocking work."""
+    def _arm_loading_screen(self, message="Loading workspace…", percent=0,
+                            hide_krita=True, raise_only=False, title=None):
+        """Show the one full-screen study loading cover."""
         try:
             if self._loading_window is None:
                 from .loading_screen import LoadingWindow
@@ -1682,15 +1688,22 @@ class HideUIExtension(Extension):
             if not self._loading_armed:
                 self._loading_armed = True
                 self._loading_started_at = time.monotonic()
-            self._loading_window.show_loading()
-            self._loading_window.set_progress(percent, message)
-            if self._qwin_alive():
+            self._loading_window.show_loading(raise_only=raise_only)
+            self._loading_window.set_progress(
+                percent, message, title=title or "Loading workspace")
+            if hide_krita and self._qwin_alive():
                 self._qwin.hide()
-            from .experiment import suppress_krita_ui
-            suppress_krita_ui(self._loading_window)
+            if not raise_only:
+                from .experiment import suppress_krita_ui
+                suppress_krita_ui(self._loading_window)
+            else:
+                self._loading_window.raise_()
+                self._loading_window.activateWindow()
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()
         except Exception:
             _log(traceback.format_exc())
-
     def _show_loading_screen(self):
         self._arm_loading_screen()
 
@@ -1739,13 +1752,18 @@ class HideUIExtension(Extension):
             return
         self._polish_reveal_active = True
         if not self._loading_armed:
-            self._arm_loading_screen("Preparing workspace…", 3)
+            self._arm_loading_screen(
+                "Preparing workspace…", 3, title="Preparing workspace")
         else:
             current = 3
             if self._loading_window is not None:
                 current = self._loading_window._bar.value()
             self._update_loading_progress(
                 max(3, current), "Preparing workspace…")
+            if self._loading_window is not None:
+                self._loading_window.set_progress(
+                    max(3, current), "Preparing workspace…",
+                    title="Preparing workspace")
         qwin.hide()
         from .experiment import suppress_krita_ui
         suppress_krita_ui(self._loading_window)
@@ -1785,8 +1803,8 @@ class HideUIExtension(Extension):
                     on_ready(False)
                 return
             self._sync_polish_pass(qwin)
-            # Reveal on the next tick so the loading bar can paint 100% first.
-            QTimer.singleShot(0, finish_reveal)
+            # Extra settle so the full-screen cover never drops mid-layout.
+            QTimer.singleShot(LOADING_EXTRA_SETTLE_MS, finish_reveal)
 
         def tick_progress():
             if self._quitting or not self._polish_reveal_active:
@@ -3866,45 +3884,33 @@ class HideUIExtension(Extension):
             _log(traceback.format_exc())
 
     def _prompt_begin_first_recall_question(self, qwin):
-        """Wait for the participant to start question 1 (no timer yet)."""
-        if self._quitting or not self._recall_active:
-            return
-        self._recall_awaiting_first_question = True
-        self._recall_waiting_for_next = True
-        self._set_recall_timer_visible(False)
-        self._set_next_recall_visible(False)
-        self._hide_recall_question(qwin)
-        self._update_video_panel(qwin)
-        _log("recall waiting for Start first question (krita hidden=%s)"
-             % getattr(self, "_recall_krita_hidden_until_start", False))
+        """Legacy Start-button entry; recall now auto-starts under a cover."""
+        self._begin_recall_auto_start(qwin)
 
     def _on_recall_start_from_panel(self):
+        """Kept for compatibility; Start footer is no longer shown."""
         if self._quitting or not self._recall_active:
-            return
-        if not self._recall_awaiting_first_question:
             return
         qwin = self._qwin
         if not _qt_alive(qwin):
             return
-        self._recall_waiting_for_next = False
-        _log("recall Start first question clicked (right panel)")
-        self._reveal_krita_for_active_recall(qwin)
-        self._recall_awaiting_first_question = False
-        if self._video_panel is not None:
-            try:
-                self._video_panel.hide_recall_start_footer()
-            except Exception:
-                pass
-        self._update_video_panel(qwin)
-        self._start_recall_question(qwin)
+        if getattr(self, "_recall_auto_starting", False):
+            return
+        _log("recall Start clicked (legacy) -> auto-start")
+        self._begin_recall_auto_start(qwin)
 
-    def _reveal_krita_for_active_recall(self, qwin):
-        """Show Krita after recall prep while the right panel held Start."""
+    def _reveal_krita_for_active_recall(self, qwin, under_cover=False):
+        """Show Krita for recall; under_cover keeps it behind the loading curtain."""
         if not _qt_alive(qwin):
             return
         self._recall_krita_hidden_until_start = False
         try:
-            self._present_krita(qwin)
+            if under_cover:
+                # Visible for layout/overlays, but do not steal focus from cover.
+                qwin.show()
+                QApplication.processEvents()
+            else:
+                self._present_krita(qwin)
             self._ensure_study_chrome(qwin)
             self._show_study_toolbars(qwin)
             self._schedule_study_toolbar_order(qwin)
@@ -3915,9 +3921,22 @@ class HideUIExtension(Extension):
             self._enforce_window_geometry()
             QApplication.processEvents()
             self._build_recall_overlays(qwin, prepare=True)
-            self._focus_canvas(qwin)
+            if under_cover:
+                self._cover_recall_prep(
+                    "Placing command covers…", percent=70)
+            else:
+                self._focus_canvas(qwin)
         except Exception:
             _log(traceback.format_exc())
+
+    def _cover_recall_prep(self, message="Preparing recall…", percent=50):
+        """Full-screen opaque curtain; Krita may exist underneath for layout."""
+        self._arm_loading_screen(
+            message,
+            percent=percent,
+            hide_krita=False,
+            raise_only=True,
+            title="Preparing recall")
 
     def _prompt_next_recall_question(self, qwin):
         """Pause after an answer/timeout until the participant clicks Next."""
@@ -3953,10 +3972,9 @@ class HideUIExtension(Extension):
         if not _qt_alive(qwin):
             return
         if self._recall_awaiting_first_question:
-            self._reveal_krita_for_active_recall(qwin)
             self._recall_awaiting_first_question = False
-            _log("recall Start first question clicked")
-            self._start_recall_question(qwin)
+            _log("recall Next/Start -> auto-start")
+            self._begin_recall_auto_start(qwin)
             return
         _log("recall Next question clicked -> advancing")
         self._advance_recall_question(qwin)
@@ -4780,7 +4798,8 @@ class HideUIExtension(Extension):
                 restore = getattr(self, "_study_layout_profile", "A")
             self._phase_transition_busy = True
             _log("prepare_study_canvas: %s (layout_after=%s)" % (label, restore))
-            self._arm_loading_screen("Preparing canvas…", 2)
+            self._arm_loading_screen(
+                "Preparing canvas…", 2, title="Preparing workspace")
             self._halt_deferred_work()
             # Krita re-applies kritarc's [MainWindow] State during document
             # churn. Point it at the layout we're entering, not the one we're
@@ -4957,7 +4976,8 @@ class HideUIExtension(Extension):
                 and self._can_reset_document_for_churn("recall", layout_after)):
             _log("prepare_recall_canvas: fast path (reuse canvas)")
             self._phase_transition_busy = True
-            self._arm_loading_screen("Preparing canvas…", 2)
+            self._arm_loading_screen(
+                "Preparing canvas…", 2, title="Preparing recall")
             try:
                 self._halt_deferred_work()
                 self._sync_kritarc_layout_state(layout_after)
@@ -5201,19 +5221,103 @@ class HideUIExtension(Extension):
             self._start_recall_click_capture()
             self._start_position_guard()
             self._recall_overlay_generation += 1
-            # Warmups while Krita is hidden waste CPU and use wrong geometry.
-            # Schedule them after reveal instead (see _reveal_krita_for_active_recall).
-            if not getattr(self, "_recall_krita_hidden_until_start", False):
-                self._schedule_recall_overlay_warmup(qwin)
             self._set_tutorial_timer_visible(False)
             if getattr(self, "_recall_krita_hidden_until_start", False):
                 from .experiment import suppress_krita_ui
                 suppress_krita_ui()
                 qwin.hide()
             self._update_video_panel(qwin)
-            self._prompt_begin_first_recall_question(qwin)
+            # Auto-start: settle under a cover, then show Q1 (no Start button).
+            self._begin_recall_auto_start(qwin)
         except Exception:
             _log(traceback.format_exc())
+
+    def _begin_recall_auto_start(self, qwin):
+        """Cover Krita until overlays settle, then start question 1 automatically."""
+        if self._quitting or not self._recall_active or not _qt_alive(qwin):
+            return
+        self._recall_auto_starting = True
+        self._recall_awaiting_first_question = False
+        self._recall_waiting_for_next = False
+        self._set_recall_timer_visible(False)
+        self._set_next_recall_visible(False)
+        self._hide_recall_question(qwin)
+        if self._video_panel is not None:
+            try:
+                self._video_panel.hide_recall_start_footer()
+            except Exception:
+                pass
+        # Curtain first — before any reveal — so Krita never flashes.
+        self._cover_recall_prep("Preparing recall…", percent=35)
+        self._update_video_panel(qwin)
+        _log("recall auto-start: preparing under full-screen cover")
+        QTimer.singleShot(40, lambda q=qwin: self._recall_auto_start_settle(q))
+
+    def _recall_auto_start_settle(self, qwin):
+        if (not getattr(self, "_recall_auto_starting", False)
+                or not self._recall_active or self._quitting
+                or not _qt_alive(qwin)):
+            self._hide_loading_screen()
+            self._recall_auto_starting = False
+            return
+        try:
+            self._cover_recall_prep("Preparing recall…", percent=55)
+            self._reveal_krita_for_active_recall(qwin, under_cover=True)
+            self._cover_recall_prep("Placing command covers…", percent=70)
+            self._build_recall_overlays(qwin, prepare=True)
+            self._cover_recall_prep("Placing command covers…", percent=75)
+            gen = self._recall_overlay_generation
+            delays = RECALL_OVERLAY_WARMUP_DELAYS_MS
+            for i, delay in enumerate(delays):
+                last = (i == len(delays) - 1)
+                QTimer.singleShot(
+                    delay,
+                    lambda q=qwin, g=gen, last=last, idx=i:
+                        self._recall_auto_start_tick(q, g, last, idx))
+        except Exception:
+            _log(traceback.format_exc())
+            self._recall_auto_start_go(qwin)
+
+    def _recall_auto_start_tick(self, qwin, gen, last, idx):
+        if gen != self._recall_overlay_generation:
+            return
+        if (not getattr(self, "_recall_auto_starting", False)
+                or not self._recall_active or self._quitting
+                or not _qt_alive(qwin)):
+            return
+        try:
+            self._build_recall_overlays(qwin, prepare=False)
+            self._cover_recall_prep(
+                "Preparing recall…",
+                percent=min(95, 75 + idx * 8))
+            if last:
+                QTimer.singleShot(
+                    100 + LOADING_EXTRA_SETTLE_MS,
+                    lambda q=qwin: self._recall_auto_start_go(q))
+        except Exception:
+            _log(traceback.format_exc())
+            self._recall_auto_start_go(qwin)
+
+    def _recall_auto_start_go(self, qwin):
+        """Drop the cover and start question 1."""
+        try:
+            self._hide_loading_screen()
+            self._recall_auto_starting = False
+            self._recall_krita_hidden_until_start = False
+            if self._quitting or not self._recall_active or not _qt_alive(qwin):
+                return
+            self._present_krita(qwin)
+            self._ensure_study_chrome(qwin)
+            self._lock_window(qwin, show=True)
+            self._build_recall_overlays(qwin, prepare=False)
+            self._focus_canvas(qwin)
+            self._update_video_panel(qwin)
+            _log("recall auto-start: starting question 1")
+            self._start_recall_question(qwin)
+        except Exception:
+            _log(traceback.format_exc())
+            self._hide_loading_screen()
+            self._recall_auto_starting = False
 
     def _start_recall_click_capture(self):
         app = QApplication.instance()
@@ -5893,6 +5997,8 @@ class HideUIExtension(Extension):
     def _on_recall_click(self, widget, cmd_id, overlay=None, click_global=None):
         if self._recall_awaiting_first_question:
             return
+        if getattr(self, "_recall_auto_starting", False):
+            return
         if self._recall_question_answered or self._quitting or not self._recall_active:
             return
         if self._recall_index >= len(self._recall_questions):
@@ -6269,8 +6375,10 @@ class HideUIExtension(Extension):
             self._recall_active = False
             self._recall_waiting_for_next = False
             self._recall_awaiting_first_question = False
+            self._recall_auto_starting = False
             self._recall_krita_hidden_until_start = False
             self._recall_panel_message = None
+            self._hide_loading_screen()
             self._stop_recall_click_capture()
             if self._recall_timer is not None:
                 self._recall_timer.stop()
@@ -6421,12 +6529,9 @@ class HideUIExtension(Extension):
             return
         self._pending_break_learn_num = int(learn_num)
         self._pending_break_body = break_body
-        layout = getattr(self, "_study_layout_profile", "A")
-        self._prepare_study_canvas(
-            qwin,
-            lambda ok: self._start_break_window(qwin, after_fn, ok),
-            label="break", layout_after=layout)
-
+        # No canvas/loading prep for breaks — go straight to the break screen.
+        self._hide_loading_screen()
+        self._start_break_window(qwin, after_fn, True)
     def _start_break_window(self, qwin, after_fn, ok):
         from .session_flow import run_timed_break, BREAK_SEC
         from .video_panel import suspend_playback_for_phase_change
@@ -6847,7 +6952,8 @@ class HideUIExtension(Extension):
                 and event.button() == Qt.LeftButton):
             if self._is_recall_ui_excluded_click(obj, event.globalPos()):
                 return False
-            if self._recall_awaiting_first_question:
+            if self._recall_awaiting_first_question or getattr(
+                    self, "_recall_auto_starting", False):
                 cmd_id, _, _ = self._recall_overlay_at(event.globalPos())
                 if cmd_id is not None:
                     return True
