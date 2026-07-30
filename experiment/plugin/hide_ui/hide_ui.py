@@ -52,6 +52,8 @@ NEXT_RECALL_STYLE = (
     " QPushButton:pressed { background: #3a5f95; }")
 TIMER_URGENT_SEC = 5
 TIMER_BLINK_MS = 400
+# Extra beat after learning/recall prep so the full-screen cover never drops mid-layout.
+LOADING_EXTRA_SETTLE_MS = 1000
 # Rebuild recall white boxes until dock/toolbar geometry settles (pre-Start).
 # Keep this short: full prepare+embed on every rebuild made recall feel slow.
 RECALL_OVERLAY_WARMUP_DELAYS_MS = (80, 300, 700)
@@ -1673,8 +1675,9 @@ class HideUIExtension(Extension):
         except Exception:
             _log(traceback.format_exc())
 
-    def _arm_loading_screen(self, message="Loading workspace…", percent=0):
-        """Show the loading overlay immediately and paint before blocking work."""
+    def _arm_loading_screen(self, message="Loading workspace…", percent=0,
+                            title=None):
+        """Show the full-screen learning/recall loading cover."""
         try:
             if self._loading_window is None:
                 from .loading_screen import LoadingWindow
@@ -1683,11 +1686,15 @@ class HideUIExtension(Extension):
                 self._loading_armed = True
                 self._loading_started_at = time.monotonic()
             self._loading_window.show_loading()
-            self._loading_window.set_progress(percent, message)
+            self._loading_window.set_progress(
+                percent, message, title=title or "Preparing workspace")
             if self._qwin_alive():
                 self._qwin.hide()
             from .experiment import suppress_krita_ui
             suppress_krita_ui(self._loading_window)
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()
         except Exception:
             _log(traceback.format_exc())
 
@@ -1785,8 +1792,8 @@ class HideUIExtension(Extension):
                     on_ready(False)
                 return
             self._sync_polish_pass(qwin)
-            # Reveal on the next tick so the loading bar can paint 100% first.
-            QTimer.singleShot(0, finish_reveal)
+            # Extra settle so the full-screen cover never drops mid-layout.
+            QTimer.singleShot(LOADING_EXTRA_SETTLE_MS, finish_reveal)
 
         def tick_progress():
             if self._quitting or not self._polish_reveal_active:
