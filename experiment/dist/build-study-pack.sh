@@ -150,9 +150,11 @@ Mac:
     (do not double-click)
   - If macOS says it cannot verify the developer/identity:
       System Settings → Privacy & Security → scroll to Security →
-      Allow / Open Anyway for Launch Study, then right-click again →
-      Open With → Terminal
-  - After it works once, quit Krita if needed and run Launch Study again
+      Allow / Open Anyway for Launch Study
+  - Right-click "Launch Study.command" → Open With → Terminal again
+  - After Launch Study finishes installing, quit the Krita window that is
+    currently open, then open a new instance of Krita (run Launch Study
+    again, or open Krita from Applications)
 
 Windows:
   - Double-click "Launch Study.bat"
