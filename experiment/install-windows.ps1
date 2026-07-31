@@ -52,9 +52,18 @@ if (Test-Path $MediaSrc) {
 
 Remove-Item (Join-Path $Root "layout_states\*.state") -Force -ErrorAction SilentlyContinue
 
-$Patch = Join-Path $Root "scripts\patch_kritarc.py"
-python $Patch $Prefs
+$Patch = Join-Path $Root "scripts\patch_kritarc.ps1"
+& powershell -NoProfile -ExecutionPolicy Bypass -File $Patch -Prefs $Prefs
+
+if (-not (Test-Path $PluginDest) -or -not (Test-Path (Join-Path $KritaSupport "pykrita\hide_ui.desktop"))) {
+    throw "Study plugin files were not installed."
+}
+$prefsText = Get-Content -Raw -Path $Prefs -ErrorAction SilentlyContinue
+if ($prefsText -notmatch "enable_hide_ui=true") {
+    throw "Could not enable the study plugin in kritarc."
+}
 
 Write-Host "Installed experiment plugin to:"
 Write-Host "  $PluginDest"
-Write-Host "Launch with the bundled Launch Study.bat (or krita.exe -nosplash)"
+Write-Host "Study plugin enabled in kritarc."
+Write-Host "Launch with the bundled Launch Study.bat (or krita.exe --nosplash)"

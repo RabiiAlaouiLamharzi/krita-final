@@ -107,7 +107,7 @@ chmod +x "$STAGE/Launch Study.command"
 
 cat > "$STAGE/Launch Study.bat" <<'EOF'
 @echo off
-setlocal
+setlocal EnableExtensions
 cd /d "%~dp0"
 echo Installing study plugin into your Krita profile...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0study-pack\install-windows.ps1"
@@ -118,26 +118,25 @@ if errorlevel 1 (
 )
 echo.
 echo Opening Krita...
-where krita >nul 2>&1
-if %errorlevel%==0 (
-  start "" krita -nosplash
-  goto :done
-)
 if exist "%ProgramFiles%\Krita (x64)\bin\krita.exe" (
-  start "" "%ProgramFiles%\Krita (x64)\bin\krita.exe" -nosplash
+  start "" "%ProgramFiles%\Krita (x64)\bin\krita.exe" --nosplash
   goto :done
 )
 if exist "%ProgramFiles%\Krita\bin\krita.exe" (
-  start "" "%ProgramFiles%\Krita\bin\krita.exe" -nosplash
+  start "" "%ProgramFiles%\Krita\bin\krita.exe" --nosplash
   goto :done
 )
-echo ERROR: Could not find krita.exe.
-echo Install Krita 5.3.2 from https://krita.org/en/download/ then run this again.
+if exist "%LocalAppData%\Programs\Krita\bin\krita.exe" (
+  start "" "%LocalAppData%\Programs\Krita\bin\krita.exe" --nosplash
+  goto :done
+)
+echo Install finished, but could not auto-open Krita.
+echo Open Krita from the Start menu.
 pause
-exit /b 1
 :done
 endlocal
 EOF
+perl -pi -e 's/\n/\r\n/' "$STAGE/Launch Study.bat"
 
 cat > "$STAGE/README-PARTICIPANT.txt" <<'EOF'
 Krita UI Learning Study — setup pack

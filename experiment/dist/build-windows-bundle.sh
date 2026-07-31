@@ -81,7 +81,7 @@ mkdir -p "$STAGE/study-pack/participant_data" "$STAGE/study-pack/layout_states"
 
 cat > "$STAGE/Launch Study.bat" <<'EOF'
 @echo off
-setlocal
+setlocal EnableExtensions
 cd /d "%~dp0"
 echo Installing study plugin...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0study-pack\install-windows.ps1"
@@ -92,17 +92,18 @@ if errorlevel 1 (
 )
 echo.
 echo Starting Krita Study...
-if exist "%~dp0krita\bin\krita.exe" (
-  start "" "%~dp0krita\bin\krita.exe" -nosplash
-) else if exist "%~dp0krita\krita.exe" (
-  start "" "%~dp0krita\krita.exe" -nosplash
-) else (
+set "KRITA_EXE="
+if exist "%~dp0krita\bin\krita.exe" set "KRITA_EXE=%~dp0krita\bin\krita.exe"
+if not defined KRITA_EXE if exist "%~dp0krita\krita.exe" set "KRITA_EXE=%~dp0krita\krita.exe"
+if not defined KRITA_EXE (
   echo Could not find krita.exe
   pause
   exit /b 1
 )
+start "" "%KRITA_EXE%" --nosplash
 endlocal
 EOF
+perl -pi -e 's/\n/\r\n/' "$STAGE/Launch Study.bat"
 
 cat > "$STAGE/README-PARTICIPANT.txt" <<EOF
 Krita UI Learning Study — Windows
