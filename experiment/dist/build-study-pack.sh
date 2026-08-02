@@ -112,22 +112,29 @@ cd /d "%~dp0"
 title Krita Study Launcher
 echo.
 echo === Krita Study (Windows) ===
-echo Closing any running Krita, then installing the study plugin...
+echo Keep this window open and read the messages.
+echo.
+echo Step 1/2: install study plugin...
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0study-pack\install-windows.ps1"
-if errorlevel 1 (
-  echo.
+set "INSTALL_ERR=%ERRORLEVEL%"
+echo.
+if not "%INSTALL_ERR%"=="0" (
   echo INSTALL FAILED.
-  echo Run this for details, then send the output to the experimenter:
+  echo.
+  echo Open this log and send it to the experimenter:
+  echo   %~dp0study-pack\install-log.txt
+  echo.
+  echo Or run:
   echo   powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0study-pack\diagnose-windows.ps1"
   echo.
-  pause
+  echo Press any key to close...
+  pause >nul
   exit /b 1
 )
 
-echo.
-echo Opening Krita with the study plugin...
+echo Step 2/2: start Krita...
 set "KRITA_EXE="
 if exist "%~dp0study-pack\.krita_exe_path.txt" (
   set /p KRITA_EXE=<"%~dp0study-pack\.krita_exe_path.txt"
@@ -138,21 +145,21 @@ if not defined KRITA_EXE if exist "%LocalAppData%\Programs\Krita\bin\krita.exe" 
 
 if defined KRITA_EXE (
   echo Starting: %KRITA_EXE%
-  start "KritaStudy" /D "%~dp0" "%KRITA_EXE%" --nosplash
+  start "" "%KRITA_EXE%" --nosplash
   echo.
-  echo If you see normal Krita instead of the study login:
-  echo   1. Fully quit Krita
-  echo   2. Run Launch Study.bat again
-  echo   3. Or run diagnose-windows.ps1 and send the output
-  goto :done
+  echo You should see the STUDY LOGIN window, not normal Krita.
+  echo If you still see normal Krita:
+  echo   1. Quit Krita completely
+  echo   2. Double-click Launch Study.bat again
+  echo   3. Send study-pack\install-log.txt to the experimenter
+) else (
+  echo Install OK, but krita.exe was not found.
+  echo Open Krita from the Start menu now.
 )
 
 echo.
-echo Install finished, but krita.exe was not found.
-echo Install Krita from https://krita.org/en/download/ then run this again.
-echo Or open Krita from the Start menu after this install.
-pause
-:done
+echo Press any key to close this window...
+pause >nul
 endlocal
 EOF
 perl -pi -e 's/\n/\r\n/' "$STAGE/Launch Study.bat"
