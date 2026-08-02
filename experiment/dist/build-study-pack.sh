@@ -109,29 +109,48 @@ cat > "$STAGE/Launch Study.bat" <<'EOF'
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-echo Installing study plugin into your Krita profile...
+title Krita Study Launcher
+echo.
+echo === Krita Study (Windows) ===
+echo Closing any running Krita, then installing the study plugin...
+echo.
+
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0study-pack\install-windows.ps1"
 if errorlevel 1 (
-  echo Install failed.
+  echo.
+  echo INSTALL FAILED.
+  echo Run this for details, then send the output to the experimenter:
+  echo   powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0study-pack\diagnose-windows.ps1"
+  echo.
   pause
   exit /b 1
 )
+
 echo.
-echo Opening Krita...
-if exist "%ProgramFiles%\Krita (x64)\bin\krita.exe" (
-  start "" "%ProgramFiles%\Krita (x64)\bin\krita.exe" --nosplash
+echo Opening Krita with the study plugin...
+set "KRITA_EXE="
+if exist "%~dp0study-pack\.krita_exe_path.txt" (
+  set /p KRITA_EXE=<"%~dp0study-pack\.krita_exe_path.txt"
+)
+if not defined KRITA_EXE if exist "%ProgramFiles%\Krita (x64)\bin\krita.exe" set "KRITA_EXE=%ProgramFiles%\Krita (x64)\bin\krita.exe"
+if not defined KRITA_EXE if exist "%ProgramFiles%\Krita\bin\krita.exe" set "KRITA_EXE=%ProgramFiles%\Krita\bin\krita.exe"
+if not defined KRITA_EXE if exist "%LocalAppData%\Programs\Krita\bin\krita.exe" set "KRITA_EXE=%LocalAppData%\Programs\Krita\bin\krita.exe"
+
+if defined KRITA_EXE (
+  echo Starting: %KRITA_EXE%
+  start "KritaStudy" /D "%~dp0" "%KRITA_EXE%" --nosplash
+  echo.
+  echo If you see normal Krita instead of the study login:
+  echo   1. Fully quit Krita
+  echo   2. Run Launch Study.bat again
+  echo   3. Or run diagnose-windows.ps1 and send the output
   goto :done
 )
-if exist "%ProgramFiles%\Krita\bin\krita.exe" (
-  start "" "%ProgramFiles%\Krita\bin\krita.exe" --nosplash
-  goto :done
-)
-if exist "%LocalAppData%\Programs\Krita\bin\krita.exe" (
-  start "" "%LocalAppData%\Programs\Krita\bin\krita.exe" --nosplash
-  goto :done
-)
-echo Install finished, but could not auto-open Krita.
-echo Open Krita from the Start menu.
+
+echo.
+echo Install finished, but krita.exe was not found.
+echo Install Krita from https://krita.org/en/download/ then run this again.
+echo Or open Krita from the Start menu after this install.
 pause
 :done
 endlocal
@@ -156,8 +175,11 @@ Mac:
     again, or open Krita from Applications)
 
 Windows:
+  - Quit Krita completely if it is open
   - Double-click "Launch Study.bat"
     (SmartScreen: More info → Run anyway)
+  - If something fails, run study-pack\diagnose-windows.ps1 and
+    send the output to the experimenter
 
 3) Log in with the credentials your experimenter sent you.
 
