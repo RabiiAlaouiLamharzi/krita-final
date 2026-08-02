@@ -114,6 +114,41 @@ echo.
 echo === Krita Study (Windows) ===
 echo Keep this window open and read the messages.
 echo.
+echo Running from:
+echo   %~dp0
+echo.
+
+REM Detect "opened from inside the zip" (Windows Temp extract) — files are incomplete there.
+echo %~dp0 | findstr /i "\\AppData\\Local\\Temp\\ \\Temp\\ .zip" >nul
+if not errorlevel 1 (
+  echo ERROR: You opened Launch Study from INSIDE the zip file.
+  echo Windows only extracted part of the pack to a temporary folder.
+  echo.
+  echo DO THIS INSTEAD:
+  echo   1. Close this window
+  echo   2. Right-click KritaStudy-pack.zip
+  echo   3. Choose "Extract All..." / "Extraire tout..."
+  echo   4. Extract to Desktop or Documents
+  echo   5. Open the extracted folder
+  echo   6. Double-click Launch Study.bat there
+  echo.
+  echo Press any key to close...
+  pause >nul
+  exit /b 1
+)
+
+if not exist "%~dp0study-pack\install-windows.ps1" (
+  echo ERROR: study-pack\install-windows.ps1 is missing.
+  echo.
+  echo You must EXTRACT the zip first (right-click -^> Extract All),
+  echo then run Launch Study.bat from the extracted folder.
+  echo Do NOT open the .bat from inside the .zip window.
+  echo.
+  echo Press any key to close...
+  pause >nul
+  exit /b 1
+)
+
 echo Step 1/2: install study plugin...
 echo.
 
