@@ -110,46 +110,50 @@ cat > "$STAGE/Launch Study.bat" <<'EOF'
 setlocal EnableExtensions
 cd /d "%~dp0"
 title Krita Study Launcher
-echo.
-echo === Krita Study (Windows) ===
-echo Keep this window open and read the messages.
-echo.
-echo Running from:
-echo   %~dp0
-echo.
+color 0A
 
-REM Detect "opened from inside the zip" (Windows Temp extract) — files are incomplete there.
-echo %~dp0 | findstr /i "\\AppData\\Local\\Temp\\ \\Temp\\ .zip" >nul
+REM Popup so something is visible even if the console opens behind other windows
+powershell -NoProfile -Command "try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Krita Study launcher is starting.\n\nLook for the BLACK window behind this message.\nPress OK, then follow the black window.','Krita Study') | Out-Null } catch { }"
+
+echo ============================================
+echo   KRITA STUDY - THIS BLACK WINDOW IS WORKING
+echo ============================================
+echo.
+echo Folder:
+echo   %CD%
+echo.
+echo IMPORTANT:
+echo   1. This folder must be EXTRACTED (not inside the zip)
+echo   2. Path should look like Desktop\KritaStudy-pack
+echo   3. NOT AppData\Local\Temp
+echo.
+pause
+
+echo %CD% | findstr /i "\\AppData\\Local\\Temp\\ \\Local\\Temp\\" >nul
 if not errorlevel 1 (
-  echo ERROR: You opened Launch Study from INSIDE the zip file.
-  echo Windows only extracted part of the pack to a temporary folder.
   echo.
-  echo DO THIS INSTEAD:
-  echo   1. Close this window
-  echo   2. Right-click KritaStudy-pack.zip
-  echo   3. Choose "Extract All..." / "Extraire tout..."
-  echo   4. Extract to Desktop or Documents
-  echo   5. Open the extracted folder
-  echo   6. Double-click Launch Study.bat there
+  echo ERROR / ERREUR:
+  echo You are still inside a TEMP/zip folder.
   echo.
-  echo Press any key to close...
-  pause >nul
+  echo Right-click KritaStudy-pack.zip -^> Extract All / Extraire tout
+  echo Extract to Desktop, then run Launch Study.bat from THERE.
+  echo.
+  pause
   exit /b 1
 )
 
 if not exist "%~dp0study-pack\install-windows.ps1" (
+  echo.
   echo ERROR: study-pack\install-windows.ps1 is missing.
+  echo Extract the FULL zip first, then try again.
   echo.
-  echo You must EXTRACT the zip first (right-click -^> Extract All),
-  echo then run Launch Study.bat from the extracted folder.
-  echo Do NOT open the .bat from inside the .zip window.
-  echo.
-  echo Press any key to close...
-  pause >nul
+  pause
   exit /b 1
 )
 
-echo Step 1/2: install study plugin...
+echo.
+echo Step 1/2: installing study plugin...
+echo Please wait. Messages will appear below.
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0study-pack\install-windows.ps1"
@@ -157,19 +161,14 @@ set "INSTALL_ERR=%ERRORLEVEL%"
 echo.
 if not "%INSTALL_ERR%"=="0" (
   echo INSTALL FAILED.
-  echo.
-  echo Open this log and send it to the experimenter:
+  echo Send this file / collez ce fichier dans le Google Doc:
   echo   %~dp0study-pack\install-log.txt
   echo.
-  echo Or run:
-  echo   powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0study-pack\diagnose-windows.ps1"
-  echo.
-  echo Press any key to close...
-  pause >nul
+  pause
   exit /b 1
 )
 
-echo Step 2/2: start Krita...
+echo Step 2/2: starting Krita...
 set "KRITA_EXE="
 if exist "%~dp0study-pack\.krita_exe_path.txt" (
   set /p KRITA_EXE=<"%~dp0study-pack\.krita_exe_path.txt"
@@ -182,19 +181,16 @@ if defined KRITA_EXE (
   echo Starting: %KRITA_EXE%
   start "" "%KRITA_EXE%" --nosplash
   echo.
-  echo You should see the STUDY LOGIN window, not normal Krita.
-  echo If you still see normal Krita:
-  echo   1. Quit Krita completely
-  echo   2. Double-click Launch Study.bat again
-  echo   3. Send study-pack\install-log.txt to the experimenter
+  echo Check the taskbar for Krita / the study login window.
+  echo If nothing appears, wait 20 seconds, then click Krita in the taskbar.
 ) else (
   echo Install OK, but krita.exe was not found.
   echo Open Krita from the Start menu now.
 )
 
 echo.
-echo Press any key to close this window...
-pause >nul
+echo Done. Press any key to close this window.
+pause
 endlocal
 EOF
 perl -pi -e 's/\n/\r\n/' "$STAGE/Launch Study.bat"

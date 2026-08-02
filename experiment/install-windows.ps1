@@ -29,7 +29,7 @@ function Stop-KritaCompletely {
     }
 
     # Wait until fully gone so an exiting Krita cannot overwrite kritarc after we patch
-    for ($i = 1; $i -le 40; $i++) {
+    for ($i = 1; $i -le 15; $i++) {
         $left = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
             $_.ProcessName -match '^(krita|krita\.com)$'
         })
@@ -38,6 +38,7 @@ function Stop-KritaCompletely {
             Start-Sleep -Seconds 1
             return
         }
+        Log ("  waiting for Krita to exit... {0}/15" -f $i)
         Start-Sleep -Seconds 1
     }
     throw "Could not fully close Krita. Open Task Manager, end krita.exe, then run Launch Study.bat again."
