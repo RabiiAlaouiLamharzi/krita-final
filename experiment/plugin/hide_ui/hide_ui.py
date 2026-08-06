@@ -2197,13 +2197,16 @@ class HideUIExtension(Extension):
                 chooser.show()
                 chooser.setMinimumHeight(PRESET_STRIP_HEIGHT - 4)
                 chooser.setMaximumHeight(PRESET_STRIP_HEIGHT)
-                chooser.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                strip_w = (2 * PRESET_ICON_CELL) + 8
+                chooser.setFixedWidth(strip_w + 4)
+                chooser.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                 for view in chooser.findChildren(QAbstractItemView):
                     view.show()
                     view.setMinimumHeight(PRESET_STRIP_HEIGHT - 4)
                     view.setMaximumHeight(PRESET_STRIP_HEIGHT)
-                    view.setMinimumWidth(120)
-                    view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                    # Hug the two study icons so RTL order stays on the left.
+                    view.setFixedWidth(strip_w)
+                    view.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             return
         root.setMinimumHeight(80)
         root.setMaximumHeight(16777215)
@@ -7707,7 +7710,7 @@ class HideUIExtension(Extension):
         return keep
 
     def _unwrap_preset_order_proxy(self, view):
-        """Restore Krita's native preset model (Layout A must stay untouched)."""
+        """Restore Krita's native preset model so preset clicks activate correctly."""
         if view is None or not _qt_alive(view):
             return
         model = view.model()
@@ -7716,10 +7719,6 @@ class HideUIExtension(Extension):
             if src is not None:
                 view.setModel(src)
             view.setProperty("hideui_preset_order_proxy", None)
-            try:
-                view.setLayoutDirection(Qt.LeftToRight)
-            except Exception:
-                pass
             return
         existing = view.property("hideui_preset_order_proxy")
         if isinstance(existing, _PresetOrderProxy) and _qt_alive(existing):
@@ -7727,43 +7726,40 @@ class HideUIExtension(Extension):
             if src is not None and view.model() is existing:
                 view.setModel(src)
             view.setProperty("hideui_preset_order_proxy", None)
-        try:
-            view.setLayoutDirection(Qt.LeftToRight)
-        except Exception:
-            pass
 
-    def _ensure_preset_order_proxy(self, view, slots):
-        """Toolbar layouts only: filter+sort presets into the swapped order."""
+    def _apply_brush_preset_display_order(self, view):
+        """Visual order without a proxy model (proxy breaks eraser activation).
+
+        Native list is alphabetical: Eraser then Round.
+        Layout A: LTR = leave native alone.
+        Toolbar (after brushes move): RTL = Round Brush then Eraser.
+        Keep the view width tight so RTL icons stay on the left, not far right.
+        """
         if view is None or not _qt_alive(view):
-            return None
-        model = view.model()
-        if model is None:
-            return None
-        if isinstance(model, _PresetOrderProxy):
-            proxy = model
-        else:
-            existing = view.property("hideui_preset_order_proxy")
-            if (isinstance(existing, _PresetOrderProxy)
-                    and _qt_alive(existing)
-                    and existing.sourceModel() is model):
-                proxy = existing
-                view.setModel(proxy)
-            else:
-                src = model
-                while isinstance(src, _PresetOrderProxy):
-                    src = src.sourceModel()
-                if src is None:
-                    return None
-                proxy = _PresetOrderProxy(view)
-                proxy.setSourceModel(src)
-                view.setModel(proxy)
-                view.setProperty("hideui_preset_order_proxy", proxy)
-        proxy.set_order_slots(slots)
+            return
+        from .layout_profiles import profile_flags
+        toolbar = bool(profile_flags(
+            getattr(self, "_study_layout_profile", "A")).get(
+                "presets_in_toolbar", False))
         try:
-            view.setLayoutDirection(Qt.LeftToRight)
+            if toolbar:
+                strip_w = (2 * PRESET_ICON_CELL) + 8
+                view.setFixedWidth(strip_w)
+                view.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+                view.setLayoutDirection(Qt.RightToLeft)
+                parent = view.parentWidget()
+                if parent is not None:
+                    lay = parent.layout()
+                    if lay is not None:
+                        lay.setAlignment(view, Qt.AlignLeft | Qt.AlignVCenter)
+            else:
+                view.setMinimumWidth(120)
+                view.setMaximumWidth(16777215)
+                view.setSizePolicy(
+                    QSizePolicy.Expanding, QSizePolicy.Expanding)
+                view.setLayoutDirection(Qt.LeftToRight)
         except Exception:
             pass
-        return proxy
 
     def _show_only_brush_preset_rows(self, view, model, keep_rows):
         if view is None or model is None:
@@ -7775,6 +7771,7 @@ class HideUIExtension(Extension):
         for row in keep_rows:
             view.setRowHidden(row, False)
         view.show()
+        self._apply_brush_preset_display_order(view)
 
     def _trim_brush_presets(self, qwin):
         roots = []
@@ -7792,7 +7789,6 @@ class HideUIExtension(Extension):
         toolbar = self._presets_use_toolbar_strip()
         if toolbar:
             self._ensure_toolbar_presets_visible(qwin)
-        order_slots = self._study_brush_preset_order()
         for root in roots:
             if root is None or not _qt_alive(root):
                 continue
@@ -7811,13 +7807,9 @@ class HideUIExtension(Extension):
                 except Exception:
                     pass
                 for view in chooser.findChildren(QAbstractItemView):
-                    # Layout A / docker: native order only. Toolbar: swapped order.
-                    if toolbar:
-                        proxy = self._ensure_preset_order_proxy(view, order_slots)
-                        model = proxy if proxy is not None else view.model()
-                    else:
-                        self._unwrap_preset_order_proxy(view)
-                        model = view.model()
+                    # Keep Krita's native model — proxy blocks eraser activation.
+                    self._unwrap_preset_order_proxy(view)
+                    model = view.model()
                     if model is None:
                         continue
                     rows = model.rowCount()
@@ -7831,6 +7823,7 @@ class HideUIExtension(Extension):
                         for row in range(rows):
                             view.setRowHidden(row, False)
                         view.show()
+                        self._apply_brush_preset_display_order(view)
                         chooser.show()
                         continue
                     self._show_only_brush_preset_rows(view, model, keep_rows)
@@ -7862,7 +7855,6 @@ class HideUIExtension(Extension):
             if profile_flags(profile).get("presets_in_toolbar"):
                 self._ensure_toolbar_presets_visible(qwin)
             toolbar = self._presets_use_toolbar_strip()
-            order_slots = self._study_brush_preset_order()
             self._brush_preset_keepalive_armed = True
             roots = []
             dock = self._dock_by_name(qwin, "PresetDocker")
@@ -7882,12 +7874,8 @@ class HideUIExtension(Extension):
                         continue
                     chooser.show()
                     for view in chooser.findChildren(QAbstractItemView):
-                        if toolbar:
-                            proxy = self._ensure_preset_order_proxy(view, order_slots)
-                            model = proxy if proxy is not None else view.model()
-                        else:
-                            self._unwrap_preset_order_proxy(view)
-                            model = view.model()
+                        self._unwrap_preset_order_proxy(view)
+                        model = view.model()
                         if model is None or model.rowCount() <= 0:
                             continue
                         keep_rows = self._pick_brush_preset_rows(model)
@@ -7895,6 +7883,7 @@ class HideUIExtension(Extension):
                             for row in range(model.rowCount()):
                                 view.setRowHidden(row, False)
                             view.show()
+                            self._apply_brush_preset_display_order(view)
                             continue
                         self._show_only_brush_preset_rows(view, model, keep_rows)
                         if toolbar:
