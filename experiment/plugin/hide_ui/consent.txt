@@ -6,7 +6,7 @@ The sessions are conducted remotely. You will share your screen with the experim
 
 In each session, you will use a simplified version of the "Krita" drawing program on your computer. First, you will complete short guided tasks to learn a set of tools and panels. Then, these commands will be hidden behind white boxes, and you will be asked to locate and click them as quickly and accurately as possible. This allows us to measure your spatial memory and how well you remember the location of Krita commands.
 
-In Session 2, we will modify the Krita interface layout. This change is a key part of the study, as we intend to understand how you adapt to new interface arrangements.
+In Session 2, we will modify the Krita interface layout. When a panel moves, the order of commands inside that panel may also change. This change is a key part of the study, as we intend to understand how you adapt to new interface arrangements.
 
 During the experiment, we will collect quantitative interaction data, including task completion times, clicks, and response accuracy. You may also be asked to complete short surveys, including both open-ended questions and Likert-scale items. We will record this qualitative feedback as well. No sensitive, medical, or financial information will be collected.
 

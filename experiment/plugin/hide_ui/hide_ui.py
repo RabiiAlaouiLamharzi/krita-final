@@ -7,7 +7,7 @@ import traceback
 from krita import Krita, Extension
 from PyQt5.QtCore import (
     QTimer, Qt, QEvent, QPoint, QSize, QRect, QRectF, QPointF, QEventLoop,
-    QByteArray)
+    QByteArray, QSortFilterProxyModel)
 from PyQt5.QtGui import (
     QPainter, QColor, QPen, QIcon, QPixmap, QTransform, QKeySequence, QCursor)
 from PyQt5.QtWidgets import (
@@ -361,8 +361,7 @@ KEEP_TOOLBOX_IDS = {
 KEEP_TOOLBOX_TOOLTIP_NEEDLES = (
     "eraser tool",
 )
-# Fixed command order everywhere:
-# text -> brush -> line -> rectangle -> ellipse -> move -> gradient -> fill
+# Baseline toolbox order (Layout A). Moved order is in layout_profiles.
 STUDY_TOOLBOX_ORDER = (
     "SvgTextTool",
     "KritaShape/KisToolBrush",
@@ -376,7 +375,7 @@ STUDY_TOOLBOX_ORDER = (
 # KisAbstractResourceModel::Name / Filename column offsets (Qt.UserRole + column).
 _PRESET_ROLE_NAME = Qt.UserRole + 2
 _PRESET_ROLE_FILENAME = Qt.UserRole + 3
-# Round brush + block eraser preset.
+# Round brush + eraser (identity mapping). Display order follows layout profile.
 BRUSH_PRESET_WHITELIST = (
     ("b)_Basic-5_Size_default", "b)_Basic-1"),
     ("a)_Eraser_Circle",),
@@ -386,6 +385,70 @@ KEEP_LAYER_WIDGETS = {
     "bnAdd", "bnDelete", "bnRaise", "bnLower", "listLayers",
 }
 LAYER_RECALL_BUTTONS = ("bnAdd", "bnDelete", "bnRaise", "bnLower")
+
+
+class _PresetOrderProxy(QSortFilterProxyModel):
+    """Keep only study presets and show them in profile display order."""
+
+    def __init__(self, parent=None):
+        super(_PresetOrderProxy, self).__init__(parent)
+        self._rank = {}
+        self.setDynamicSortFilter(True)
+        self.setFilterCaseSensitivity(Qt.CaseInsensitive)
+
+    def set_order_slots(self, slots):
+        rank = {}
+        for i, slot in enumerate(slots or ()):
+            for candidate in slot:
+                key = self._norm(candidate)
+                if key and key not in rank:
+                    rank[key] = i
+        self._rank = rank
+        self.invalidateFilter()
+        if self._rank:
+            self.sort(0, Qt.AscendingOrder)
+
+    @staticmethod
+    def _norm(value):
+        if not value:
+            return ""
+        stem = str(value).strip()
+        if stem.lower().endswith(".kpp"):
+            stem = stem[:-4]
+        return stem.lower()
+
+    def _stem_for_source_row(self, source_row, source_parent):
+        src = self.sourceModel()
+        if src is None:
+            return ""
+        idx = src.index(source_row, 0, source_parent)
+        if not idx.isValid():
+            return ""
+        for role in (_PRESET_ROLE_FILENAME, _PRESET_ROLE_NAME,
+                     Qt.DisplayRole, Qt.ToolTipRole):
+            val = src.data(idx, role)
+            stem = self._norm(val)
+            if stem:
+                return stem
+        return ""
+
+    def filterAcceptsRow(self, source_row, source_parent):
+        if not self._rank:
+            return True
+        stem = self._stem_for_source_row(source_row, source_parent)
+        return stem in self._rank
+
+    def lessThan(self, left, right):
+        src = self.sourceModel()
+        if src is None:
+            return super(_PresetOrderProxy, self).lessThan(left, right)
+        la = self._rank.get(self._stem_for_source_row(left.row(), left.parent()), 10 ** 6)
+        lb = self._rank.get(self._stem_for_source_row(right.row(), right.parent()), 10 ** 6)
+        if la != lb:
+            return la < lb
+        return super(_PresetOrderProxy, self).lessThan(left, right)
+
+
 HIDE_LAYER_WIDGETS = {
     "cmbComposite", "bnProperties", "doubleOpacity", "opacityLabel",
 }
@@ -2905,7 +2968,7 @@ class HideUIExtension(Extension):
         self._apply_study_toolbox_order(toolbox, qwin)
 
     def _apply_study_toolbox_order(self, toolbox, qwin):
-        """text -> brush -> line -> rect -> ellipse -> move -> gradient -> fill."""
+        """Apply profile toolbox order (default left, or moved order on bottom)."""
         if toolbox is None or not _qt_alive(toolbox):
             return
         if not bool(self.session) or self._quitting:
@@ -3100,6 +3163,21 @@ class HideUIExtension(Extension):
         return profile_flags(
             getattr(self, "_study_layout_profile", "A")).get("toolbox_bottom", False)
 
+    def _study_toolbox_order(self):
+        from .layout_profiles import toolbox_order_for_profile
+        return toolbox_order_for_profile(
+            getattr(self, "_study_layout_profile", "A"))
+
+    def _study_brush_preset_order(self):
+        from .layout_profiles import brush_preset_order_for_profile
+        return brush_preset_order_for_profile(
+            getattr(self, "_study_layout_profile", "A"))
+
+    def _study_layer_button_order(self):
+        from .layout_profiles import layer_button_order_for_profile
+        return layer_button_order_for_profile(
+            getattr(self, "_study_layout_profile", "A"))
+
     def _ordered_study_toolbox_buttons(self, toolbox):
         by_id = {}
         eraser = None
@@ -3115,7 +3193,7 @@ class HideUIExtension(Extension):
             else:
                 extras.append(btn)
         out = []
-        for oid in STUDY_TOOLBOX_ORDER:
+        for oid in self._study_toolbox_order():
             if oid in by_id:
                 out.append(by_id[oid])
         if eraser is not None:
@@ -3126,7 +3204,7 @@ class HideUIExtension(Extension):
         return out
 
     def _study_toolbox_visibility_codes(self, toolbox):
-        codes = list(STUDY_TOOLBOX_ORDER)
+        codes = list(self._study_toolbox_order())
         for btn in toolbox.findChildren(QToolButton):
             if not self._keep_toolbox_button(btn):
                 continue
@@ -5873,7 +5951,7 @@ class HideUIExtension(Extension):
                         self._place_recall_overlay(host, btn, cmd, 30, 30)
                 elif name == "KisLayerBox":
                     tagged = []
-                    for btn_name in LAYER_RECALL_BUTTONS:
+                    for btn_name in self._study_layer_button_order():
                         btn = self._find_layer_box_button(dock, btn_name)
                         if btn is None:
                             continue
@@ -6342,7 +6420,7 @@ class HideUIExtension(Extension):
                         btn.setProperty("hideui_recall_tooltip_stripped", True)
                         btn.setStyleSheet(RECALL_MASK_BTN_STYLE)
                 elif name == "KisLayerBox":
-                    for btn_name in LAYER_RECALL_BUTTONS:
+                    for btn_name in self._study_layer_button_order():
                         w = self._find_layer_box_button(dock, btn_name)
                         if w is None:
                             continue
@@ -7605,7 +7683,7 @@ class HideUIExtension(Extension):
             if stem and stem not in by_stem:
                 by_stem[stem] = row
         keep = []
-        for slot in BRUSH_PRESET_WHITELIST:
+        for slot in self._study_brush_preset_order():
             found = None
             for candidate in slot:
                 key = self._normalize_preset_stem(candidate)
@@ -7615,6 +7693,37 @@ class HideUIExtension(Extension):
             if found is not None:
                 keep.append(found)
         return keep
+
+    def _ensure_preset_order_proxy(self, view, slots):
+        """Install/update a proxy so whitelist presets appear in study order."""
+        if view is None or not _qt_alive(view):
+            return None
+        model = view.model()
+        if model is None:
+            return None
+        proxy = None
+        if isinstance(model, _PresetOrderProxy):
+            proxy = model
+        else:
+            existing = view.property("hideui_preset_order_proxy")
+            if (isinstance(existing, _PresetOrderProxy)
+                    and _qt_alive(existing)
+                    and existing.sourceModel() is model):
+                proxy = existing
+                view.setModel(proxy)
+            else:
+                # Unwrap an older proxy whose source was replaced.
+                src = model
+                while isinstance(src, _PresetOrderProxy):
+                    src = src.sourceModel()
+                if src is None:
+                    return None
+                proxy = _PresetOrderProxy(view)
+                proxy.setSourceModel(src)
+                view.setModel(proxy)
+                view.setProperty("hideui_preset_order_proxy", proxy)
+        proxy.set_order_slots(slots)
+        return proxy
 
     def _trim_brush_presets(self, qwin):
         roots = []
@@ -7630,6 +7739,7 @@ class HideUIExtension(Extension):
                 self._preset_popup_widget = found
                 roots.append(found)
         toolbar = self._presets_use_toolbar_strip()
+        order_slots = self._study_brush_preset_order()
         for root in roots:
             if root is None or not _qt_alive(root):
                 continue
@@ -7640,7 +7750,8 @@ class HideUIExtension(Extension):
                 if chooser.metaObject().className() != "KisResourceItemChooser":
                     continue
                 for view in chooser.findChildren(QAbstractItemView):
-                    model = view.model()
+                    proxy = self._ensure_preset_order_proxy(view, order_slots)
+                    model = view.model() if proxy is None else proxy
                     if model is None:
                         continue
                     rows = model.rowCount()
@@ -7650,8 +7761,9 @@ class HideUIExtension(Extension):
                     if not keep_rows:
                         _log("brush presets: no whitelist match (%d rows visible)" % rows)
                         continue
+                    # Proxy already filters; still unhide any leftover rows.
                     keep_set = set(keep_rows)
-                    for row in range(rows):
+                    for row in range(model.rowCount()):
                         view.setRowHidden(row, row not in keep_set)
                     for row in keep_rows:
                         view.setRowHidden(row, False)
@@ -7684,6 +7796,7 @@ class HideUIExtension(Extension):
             if profile_flags(profile).get("presets_in_toolbar"):
                 self._ensure_toolbar_presets_visible(qwin)
             toolbar = self._presets_use_toolbar_strip()
+            order_slots = self._study_brush_preset_order()
             self._brush_preset_keepalive_armed = True
             roots = []
             dock = self._dock_by_name(qwin, "PresetDocker")
@@ -7702,7 +7815,8 @@ class HideUIExtension(Extension):
                     if chooser.metaObject().className() != "KisResourceItemChooser":
                         continue
                     for view in chooser.findChildren(QAbstractItemView):
-                        model = view.model()
+                        proxy = self._ensure_preset_order_proxy(view, order_slots)
+                        model = view.model() if proxy is None else proxy
                         if model is None or model.rowCount() <= 0:
                             continue
                         keep_rows = self._pick_brush_preset_rows(model)
@@ -7766,6 +7880,66 @@ class HideUIExtension(Extension):
         bn_add.show()
         bn_add.setEnabled(True)
 
+    def _layout_index_of_widget(self, layout, widget):
+        if layout is None or widget is None:
+            return -1
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item is not None and item.widget() is widget:
+                return i
+        return -1
+
+    def _swap_widgets_in_layout(self, layout, a, b):
+        ia = self._layout_index_of_widget(layout, a)
+        ib = self._layout_index_of_widget(layout, b)
+        if ia < 0 or ib < 0 or ia == ib:
+            return False
+        if ia > ib:
+            ia, ib = ib, ia
+            a, b = b, a
+        item_b = layout.takeAt(ib)
+        item_a = layout.takeAt(ia)
+        layout.insertItem(ia, item_b)
+        layout.insertItem(ib, item_a)
+        return True
+
+    def _apply_layer_button_order(self, dock):
+        """Swap raise/lower when layers move left; restore default otherwise."""
+        order = self._study_layer_button_order()
+        raise_btn = self._find_layer_box_button(dock, "bnRaise")
+        lower_btn = self._find_layer_box_button(dock, "bnLower")
+        if raise_btn is None or lower_btn is None:
+            return
+        want_lower_first = order.index("bnLower") < order.index("bnRaise")
+        parent = raise_btn.parentWidget()
+        if parent is None or parent is not lower_btn.parentWidget():
+            return
+        lay = parent.layout()
+        if lay is not None:
+            ia = self._layout_index_of_widget(lay, raise_btn)
+            ib = self._layout_index_of_widget(lay, lower_btn)
+            if ia < 0 or ib < 0:
+                return
+            lower_is_first = ib < ia
+            if want_lower_first != lower_is_first:
+                if self._swap_widgets_in_layout(lay, raise_btn, lower_btn):
+                    _log("layers: swapped raise/lower for profile order %s"
+                         % (order,))
+            return
+        # Fallback when buttons are absolutely positioned.
+        if want_lower_first and lower_btn.x() > raise_btn.x():
+            gr = raise_btn.geometry()
+            gl = lower_btn.geometry()
+            raise_btn.setGeometry(gl)
+            lower_btn.setGeometry(gr)
+            _log("layers: swapped raise/lower geometry")
+        elif (not want_lower_first) and raise_btn.x() > lower_btn.x():
+            gr = raise_btn.geometry()
+            gl = lower_btn.geometry()
+            raise_btn.setGeometry(gl)
+            lower_btn.setGeometry(gr)
+            _log("layers: restored raise/lower geometry")
+
     def _configure_layers_panel(self, qwin):
         """Hide extra layer docker controls — widget hide only, no overlays."""
         try:
@@ -7788,6 +7962,7 @@ class HideUIExtension(Extension):
             bn_add = dock.findChild(QWidget, "bnAdd")
             if bn_add is not None:
                 self._wire_layer_add_button(dock)
+            self._apply_layer_button_order(dock)
             self._apply_dock_title(dock)
             layer_tree = dock.findChild(QWidget, "listLayers")
             if layer_tree is not None and not layer_tree.property("hideui_list_filter"):
