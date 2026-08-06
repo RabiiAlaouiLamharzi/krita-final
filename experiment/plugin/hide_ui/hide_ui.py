@@ -32,6 +32,8 @@ NATIVE_BRUSH_SLIDER_HEIGHT = 32   # Krita toolbar ButtonSize default
 PRESET_STRIP_HEIGHT = NATIVE_BRUSH_SLIDER_HEIGHT
 PRESET_ICON_SIZE = 30
 PRESET_ICON_CELL = 32
+# Stable toolbar strip width for the two study presets (left-aligned, no bounce).
+TOOLBAR_PRESET_STRIP_WIDTH = (2 * PRESET_ICON_CELL) + 28
 TIMER_STYLE_NORMAL = (
     "color: #1a1a1a; font-size: 16px; font-weight: bold;"
     "padding: 2px 14px; background: #fff3cd; border-radius: 4px;")
@@ -2197,16 +2199,20 @@ class HideUIExtension(Extension):
                 chooser.show()
                 chooser.setMinimumHeight(PRESET_STRIP_HEIGHT - 4)
                 chooser.setMaximumHeight(PRESET_STRIP_HEIGHT)
-                strip_w = (2 * PRESET_ICON_CELL) + 8
+                # Fixed width once — left-aligned, no expand/shrink bounce.
+                strip_w = TOOLBAR_PRESET_STRIP_WIDTH
                 chooser.setFixedWidth(strip_w + 4)
                 chooser.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                 for view in chooser.findChildren(QAbstractItemView):
                     view.show()
                     view.setMinimumHeight(PRESET_STRIP_HEIGHT - 4)
                     view.setMaximumHeight(PRESET_STRIP_HEIGHT)
-                    # Hug the two study icons so RTL order stays on the left.
                     view.setFixedWidth(strip_w)
                     view.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+                    try:
+                        view.setLayoutDirection(Qt.RightToLeft)
+                    except Exception:
+                        pass
             return
         root.setMinimumHeight(80)
         root.setMaximumHeight(16777215)
@@ -2870,7 +2876,9 @@ class HideUIExtension(Extension):
         title_lbl.setMargin(0)
         lay.addWidget(title_lbl, 0, Qt.AlignVCenter)
         popup.setParent(host)
-        lay.addWidget(popup, 1)
+        # No stretch on the popup — keeps icons left without a fixed width clamp.
+        lay.addWidget(popup, 0, Qt.AlignVCenter)
+        lay.addStretch(1)
         popup.setMinimumHeight(PRESET_STRIP_HEIGHT - 4)
         popup.setMaximumHeight(PRESET_STRIP_HEIGHT)
         popup.show()
@@ -7733,7 +7741,6 @@ class HideUIExtension(Extension):
         Native list is alphabetical: Eraser then Round.
         Layout A: LTR = leave native alone.
         Toolbar (after brushes move): RTL = Round Brush then Eraser.
-        Keep the view width tight so RTL icons stay on the left, not far right.
         """
         if view is None or not _qt_alive(view):
             return
@@ -7742,22 +7749,9 @@ class HideUIExtension(Extension):
             getattr(self, "_study_layout_profile", "A")).get(
                 "presets_in_toolbar", False))
         try:
-            if toolbar:
-                strip_w = (2 * PRESET_ICON_CELL) + 8
-                view.setFixedWidth(strip_w)
-                view.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-                view.setLayoutDirection(Qt.RightToLeft)
-                parent = view.parentWidget()
-                if parent is not None:
-                    lay = parent.layout()
-                    if lay is not None:
-                        lay.setAlignment(view, Qt.AlignLeft | Qt.AlignVCenter)
-            else:
-                view.setMinimumWidth(120)
-                view.setMaximumWidth(16777215)
-                view.setSizePolicy(
-                    QSizePolicy.Expanding, QSizePolicy.Expanding)
-                view.setLayoutDirection(Qt.LeftToRight)
+            want = Qt.RightToLeft if toolbar else Qt.LeftToRight
+            if view.layoutDirection() != want:
+                view.setLayoutDirection(want)
         except Exception:
             pass
 
@@ -7830,6 +7824,8 @@ class HideUIExtension(Extension):
                     chooser.show()
                     if toolbar:
                         self._apply_preset_icon_metrics(root, force=True)
+                        # Re-assert stable left strip after metrics (no timed bounce).
+                        self._ensure_preset_chooser_visible(root, toolbar=True)
                     names = [self._preset_row_stem(model, r) for r in keep_rows]
                     _log("brush presets: showing %s (toolbar=%s)" % (names, toolbar))
         self._hook_study_brush_size_on_presets(qwin)
@@ -7888,6 +7884,7 @@ class HideUIExtension(Extension):
                         self._show_only_brush_preset_rows(view, model, keep_rows)
                         if toolbar:
                             self._apply_preset_icon_metrics(root, force=True)
+                            self._ensure_preset_chooser_visible(root, toolbar=True)
         except Exception:
             _log(traceback.format_exc())
         finally:
