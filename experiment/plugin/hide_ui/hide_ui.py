@@ -7,7 +7,7 @@ import traceback
 from krita import Krita, Extension
 from PyQt5.QtCore import (
     QTimer, Qt, QEvent, QPoint, QSize, QRect, QRectF, QPointF, QEventLoop,
-    QByteArray, QSortFilterProxyModel)
+    QByteArray)
 from PyQt5.QtGui import (
     QPainter, QColor, QPen, QIcon, QPixmap, QTransform, QKeySequence, QCursor)
 from PyQt5.QtWidgets import (
@@ -385,70 +385,6 @@ KEEP_LAYER_WIDGETS = {
     "bnAdd", "bnDelete", "bnRaise", "bnLower", "listLayers",
 }
 LAYER_RECALL_BUTTONS = ("bnAdd", "bnDelete", "bnRaise", "bnLower")
-
-
-class _PresetOrderProxy(QSortFilterProxyModel):
-    """Keep only study presets and show them in profile display order."""
-
-    def __init__(self, parent=None):
-        super(_PresetOrderProxy, self).__init__(parent)
-        self._rank = {}
-        self.setDynamicSortFilter(True)
-        self.setFilterCaseSensitivity(Qt.CaseInsensitive)
-
-    def set_order_slots(self, slots):
-        rank = {}
-        for i, slot in enumerate(slots or ()):
-            for candidate in slot:
-                key = self._norm(candidate)
-                if key and key not in rank:
-                    rank[key] = i
-        self._rank = rank
-        self.invalidateFilter()
-        if self._rank:
-            self.sort(0, Qt.AscendingOrder)
-
-    @staticmethod
-    def _norm(value):
-        if not value:
-            return ""
-        stem = str(value).strip()
-        if stem.lower().endswith(".kpp"):
-            stem = stem[:-4]
-        return stem.lower()
-
-    def _stem_for_source_row(self, source_row, source_parent):
-        src = self.sourceModel()
-        if src is None:
-            return ""
-        idx = src.index(source_row, 0, source_parent)
-        if not idx.isValid():
-            return ""
-        for role in (_PRESET_ROLE_FILENAME, _PRESET_ROLE_NAME,
-                     Qt.DisplayRole, Qt.ToolTipRole):
-            val = src.data(idx, role)
-            stem = self._norm(val)
-            if stem:
-                return stem
-        return ""
-
-    def filterAcceptsRow(self, source_row, source_parent):
-        if not self._rank:
-            return True
-        stem = self._stem_for_source_row(source_row, source_parent)
-        return stem in self._rank
-
-    def lessThan(self, left, right):
-        src = self.sourceModel()
-        if src is None:
-            return super(_PresetOrderProxy, self).lessThan(left, right)
-        la = self._rank.get(self._stem_for_source_row(left.row(), left.parent()), 10 ** 6)
-        lb = self._rank.get(self._stem_for_source_row(right.row(), right.parent()), 10 ** 6)
-        if la != lb:
-            return la < lb
-        return super(_PresetOrderProxy, self).lessThan(left, right)
-
-
 HIDE_LAYER_WIDGETS = {
     "cmbComposite", "bnProperties", "doubleOpacity", "opacityLabel",
 }
@@ -7683,47 +7619,64 @@ class HideUIExtension(Extension):
             if stem and stem not in by_stem:
                 by_stem[stem] = row
         keep = []
-        for slot in self._study_brush_preset_order():
+        # Prefer profile order, but always fall back to the full whitelist so
+        # presets never disappear if order lookup fails.
+        slots = list(self._study_brush_preset_order()) or list(BRUSH_PRESET_WHITELIST)
+        seen = set()
+        ordered_slots = []
+        for slot in slots + list(BRUSH_PRESET_WHITELIST):
+            key = tuple(slot)
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered_slots.append(slot)
+        for slot in ordered_slots:
             found = None
             for candidate in slot:
                 key = self._normalize_preset_stem(candidate)
                 if key in by_stem:
                     found = by_stem[key]
                     break
-            if found is not None:
+            if found is not None and found not in keep:
                 keep.append(found)
         return keep
 
-    def _ensure_preset_order_proxy(self, view, slots):
-        """Install/update a proxy so whitelist presets appear in study order."""
+    def _apply_brush_preset_display_order(self, view):
+        """Swap brush/eraser visually without replacing Krita's resource model.
+
+        Resource lists are usually alphabetical (eraser before round brush).
+        Layout A wants brush then eraser → RightToLeft.
+        After brushes move to the toolbar, swapped order matches LTR.
+        """
         if view is None or not _qt_alive(view):
-            return None
-        model = view.model()
-        if model is None:
-            return None
-        proxy = None
-        if isinstance(model, _PresetOrderProxy):
-            proxy = model
-        else:
-            existing = view.property("hideui_preset_order_proxy")
-            if (isinstance(existing, _PresetOrderProxy)
-                    and _qt_alive(existing)
-                    and existing.sourceModel() is model):
-                proxy = existing
-                view.setModel(proxy)
-            else:
-                # Unwrap an older proxy whose source was replaced.
-                src = model
-                while isinstance(src, _PresetOrderProxy):
-                    src = src.sourceModel()
-                if src is None:
-                    return None
-                proxy = _PresetOrderProxy(view)
-                proxy.setSourceModel(src)
-                view.setModel(proxy)
-                view.setProperty("hideui_preset_order_proxy", proxy)
-        proxy.set_order_slots(slots)
-        return proxy
+            return
+        from .layout_profiles import profile_flags
+        swapped = profile_flags(
+            getattr(self, "_study_layout_profile", "A")).get(
+                "presets_in_toolbar", False)
+        try:
+            view.setLayoutDirection(
+                Qt.LeftToRight if swapped else Qt.RightToLeft)
+        except Exception:
+            pass
+
+    def _show_only_brush_preset_rows(self, view, model, keep_rows):
+        if view is None or model is None:
+            return
+        keep_set = set(keep_rows)
+        rows = model.rowCount()
+        for row in range(rows):
+            view.setRowHidden(row, row not in keep_set)
+        for row in keep_rows:
+            view.setRowHidden(row, False)
+            try:
+                idx = model.index(row, 0)
+                if idx.isValid():
+                    view.setIndexWidget(idx, None)
+            except Exception:
+                pass
+        view.show()
+        self._apply_brush_preset_display_order(view)
 
     def _trim_brush_presets(self, qwin):
         roots = []
@@ -7739,35 +7692,44 @@ class HideUIExtension(Extension):
                 self._preset_popup_widget = found
                 roots.append(found)
         toolbar = self._presets_use_toolbar_strip()
-        order_slots = self._study_brush_preset_order()
+        if toolbar:
+            self._ensure_toolbar_presets_visible(qwin)
         for root in roots:
             if root is None or not _qt_alive(root):
                 continue
+            try:
+                root.show()
+            except Exception:
+                pass
             self._reset_brush_preset_filter(root)
             self._trim_preset_chooser_extras(root)
             self._ensure_preset_chooser_visible(root, toolbar=toolbar)
             for chooser in root.findChildren(QWidget):
                 if chooser.metaObject().className() != "KisResourceItemChooser":
                     continue
+                try:
+                    chooser.show()
+                except Exception:
+                    pass
                 for view in chooser.findChildren(QAbstractItemView):
-                    proxy = self._ensure_preset_order_proxy(view, order_slots)
-                    model = view.model() if proxy is None else proxy
+                    model = view.model()
                     if model is None:
                         continue
                     rows = model.rowCount()
                     if rows <= 0:
+                        _log("brush presets: model empty, will retry")
                         continue
                     keep_rows = self._pick_brush_preset_rows(model)
                     if not keep_rows:
-                        _log("brush presets: no whitelist match (%d rows visible)" % rows)
+                        # Last-resort: unhide everything rather than show blank.
+                        _log("brush presets: no whitelist match (%d rows) — showing all"
+                             % rows)
+                        for row in range(rows):
+                            view.setRowHidden(row, False)
+                        view.show()
+                        chooser.show()
                         continue
-                    # Proxy already filters; still unhide any leftover rows.
-                    keep_set = set(keep_rows)
-                    for row in range(model.rowCount()):
-                        view.setRowHidden(row, row not in keep_set)
-                    for row in keep_rows:
-                        view.setRowHidden(row, False)
-                    view.show()
+                    self._show_only_brush_preset_rows(view, model, keep_rows)
                     chooser.show()
                     if toolbar:
                         self._apply_preset_icon_metrics(root, force=True)
@@ -7777,7 +7739,7 @@ class HideUIExtension(Extension):
         self._fix_preset_gap(qwin)
         if not getattr(self, "_brush_preset_keepalive_armed", False):
             self._brush_preset_keepalive_armed = True
-            for delay in (200, 600, 1500, 3000):
+            for delay in (200, 600, 1500, 3000, 6000):
                 QTimer.singleShot(
                     delay,
                     lambda q=qwin: self._keep_brush_presets_visible(q))
@@ -7787,7 +7749,7 @@ class HideUIExtension(Extension):
         if self._quitting or not _qt_alive(qwin):
             self._brush_preset_keepalive_armed = False
             return
-        if not (self._tutorial_active or self._recall_active):
+        if not (self._tutorial_active or self._recall_active or bool(self.session)):
             self._brush_preset_keepalive_armed = False
             return
         try:
@@ -7796,7 +7758,6 @@ class HideUIExtension(Extension):
             if profile_flags(profile).get("presets_in_toolbar"):
                 self._ensure_toolbar_presets_visible(qwin)
             toolbar = self._presets_use_toolbar_strip()
-            order_slots = self._study_brush_preset_order()
             self._brush_preset_keepalive_armed = True
             roots = []
             dock = self._dock_by_name(qwin, "PresetDocker")
@@ -7814,20 +7775,18 @@ class HideUIExtension(Extension):
                 for chooser in root.findChildren(QWidget):
                     if chooser.metaObject().className() != "KisResourceItemChooser":
                         continue
+                    chooser.show()
                     for view in chooser.findChildren(QAbstractItemView):
-                        proxy = self._ensure_preset_order_proxy(view, order_slots)
-                        model = view.model() if proxy is None else proxy
+                        model = view.model()
                         if model is None or model.rowCount() <= 0:
                             continue
                         keep_rows = self._pick_brush_preset_rows(model)
                         if not keep_rows:
+                            for row in range(model.rowCount()):
+                                view.setRowHidden(row, False)
+                            view.show()
                             continue
-                        keep_set = set(keep_rows)
-                        for row in range(model.rowCount()):
-                            view.setRowHidden(row, row not in keep_set)
-                        for row in keep_rows:
-                            view.setRowHidden(row, False)
-                        view.show()
+                        self._show_only_brush_preset_rows(view, model, keep_rows)
                         if toolbar:
                             self._apply_preset_icon_metrics(root, force=True)
         except Exception:
