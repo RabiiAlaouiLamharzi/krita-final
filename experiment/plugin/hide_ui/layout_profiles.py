@@ -9,7 +9,7 @@ Incremental (condition B) — order changes only when that panel moves:
   A            learned baseline (do not reshuffle insides)
   A_C1         brushes moved  -> Round Brush then Eraser
   A_C1_C2      toolbox moved  -> keep preset order + toolbox reshuffle
-  B            layers moved   -> keep preset + toolbox orders + swap Up/Down
+  B            layers moved   -> keep preset + toolbox orders + swap to Up then Down
 
 Abrupt (condition A): A -> B in one step = all three order changes at once.
 """
@@ -82,9 +82,9 @@ BRUSH_PRESET_ORDER_AFTER_MOVE = (
     ("a)_Eraser_Circle",),
 )
 
-# Default Layers row: Add, Delete, Up, Down. Swap Up/Down only on Layout B.
-LAYER_BUTTONS_DEFAULT = ("bnAdd", "bnDelete", "bnRaise", "bnLower")
-LAYER_BUTTONS_LAYERS_LEFT = ("bnAdd", "bnDelete", "bnLower", "bnRaise")
+# Layers row: native/default is Down then Up. Swap to Up then Down only on Layout B.
+LAYER_BUTTONS_DEFAULT = ("bnAdd", "bnDelete", "bnLower", "bnRaise")
+LAYER_BUTTONS_LAYERS_LEFT = ("bnAdd", "bnDelete", "bnRaise", "bnLower")
 
 
 def profile_flags(profile):

@@ -7974,12 +7974,12 @@ class HideUIExtension(Extension):
         return None, -1, -1
 
     def _apply_layer_button_order(self, dock):
-        """Swap Up/Down only on Layout B (layers left). Never before that."""
+        """Default = Down then Up. On Layout B only, swap to Up then Down."""
         from .layout_profiles import profile_flags
         profile = getattr(self, "_study_layout_profile", "A")
         layers_left = bool(profile_flags(profile).get("layers_left"))
-        # Explicit: A / A_C1 / A_C1_C2 = Up then Down. B only = Down then Up.
-        want_lower_first = layers_left
+        # Explicit: A / A_C1 / A_C1_C2 = Down then Up. B only = Up then Down.
+        want_lower_first = not layers_left
         order = self._study_layer_button_order()
         raise_btn = self._find_layer_box_button(dock, "bnRaise")
         lower_btn = self._find_layer_box_button(dock, "bnLower")
