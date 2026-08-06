@@ -7974,14 +7974,18 @@ class HideUIExtension(Extension):
         return None, -1, -1
 
     def _apply_layer_button_order(self, dock):
-        """Swap raise/lower only when layers move left; restore default on Layout A."""
+        """Swap Up/Down only on Layout B (layers left). Never before that."""
+        from .layout_profiles import profile_flags
+        profile = getattr(self, "_study_layout_profile", "A")
+        layers_left = bool(profile_flags(profile).get("layers_left"))
+        # Explicit: A / A_C1 / A_C1_C2 = Up then Down. B only = Down then Up.
+        want_lower_first = layers_left
         order = self._study_layer_button_order()
         raise_btn = self._find_layer_box_button(dock, "bnRaise")
         lower_btn = self._find_layer_box_button(dock, "bnLower")
         if raise_btn is None or lower_btn is None:
             _log("layers: raise/lower buttons not found")
             return
-        want_lower_first = order.index("bnLower") < order.index("bnRaise")
         lay, ia, ib = self._find_shared_button_layout(raise_btn, lower_btn)
         if lay is not None:
             lower_is_first = ib < ia
@@ -7998,9 +8002,9 @@ class HideUIExtension(Extension):
                 lay.insertWidget(left_idx + 1, lower_btn)
             raise_btn.show()
             lower_btn.show()
-            _log("layers: button order now %s" % (order,))
+            _log("layers: button order now %s (layers_left=%s)"
+                 % (order, layers_left))
             return
-        # Fallback: swap on-screen positions (horizontal or vertical).
         if raise_btn.x() != lower_btn.x():
             lower_is_first = lower_btn.x() < raise_btn.x()
         else:
@@ -8011,7 +8015,8 @@ class HideUIExtension(Extension):
         gl = lower_btn.geometry()
         raise_btn.setGeometry(gl)
         lower_btn.setGeometry(gr)
-        _log("layers: swapped raise/lower geometry for order %s" % (order,))
+        _log("layers: swapped raise/lower geometry (layers_left=%s)"
+             % layers_left)
 
     def _configure_layers_panel(self, qwin):
         """Hide extra layer docker controls — widget hide only, no overlays."""

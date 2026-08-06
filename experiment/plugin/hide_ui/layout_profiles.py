@@ -5,10 +5,13 @@ A + C1:         Left: Toolbox | Right: Color, Layers | Brushes in top toolbar
 A + C1 + C2:    Left: —       | Right: Color, Layers | Brushes in top toolbar | Bottom: Toolbox
 Layout B:       Left: Layers  | Right: Color         | Brushes in top toolbar | Bottom: Toolbox
 
-Order changes happen only when that panel itself moves:
-  - Brushes move to toolbar (A_C1+)     -> swap round brush / eraser
-  - Toolbox moves to bottom (A_C1_C2+)  -> reshuffle toolbox tools
-  - Layers move to left (B)             -> swap layer up / layer down
+Incremental (condition B) — order changes only when that panel moves:
+  A            learned baseline (do not reshuffle insides)
+  A_C1         brushes moved  -> Round Brush then Eraser
+  A_C1_C2      toolbox moved  -> keep preset order + toolbox reshuffle
+  B            layers moved   -> keep preset + toolbox orders + swap Up/Down
+
+Abrupt (condition A): A -> B in one step = all three order changes at once.
 """
 
 LAYOUT_A = "A"
@@ -68,19 +71,19 @@ STUDY_TOOLBOX_ORDER_MOVED = (
     "KritaTransform/KisToolMove",
 )
 
-# Brush preset whitelist slots. Order = desired display order.
-# Default: round brush then eraser. Swapped when brushes move into the toolbar.
-BRUSH_PRESET_ORDER_DEFAULT = (
-    ("b)_Basic-5_Size_default", "b)_Basic-1"),
+# Layout A brush docker: leave Krita's native order alone (typically Eraser then Round).
+# When brushes move into the toolbar (A_C1 / A_C1_C2 / B): Round Brush then Eraser.
+BRUSH_PRESET_ORDER_LAYOUT_A = (
     ("a)_Eraser_Circle",),
+    ("b)_Basic-5_Size_default", "b)_Basic-1"),
 )
-BRUSH_PRESET_ORDER_SWAPPED = (
-    ("a)_Eraser_Circle",),
+BRUSH_PRESET_ORDER_AFTER_MOVE = (
     ("b)_Basic-5_Size_default", "b)_Basic-1"),
+    ("a)_Eraser_Circle",),
 )
 
+# Default Layers row: Add, Delete, Up, Down. Swap Up/Down only on Layout B.
 LAYER_BUTTONS_DEFAULT = ("bnAdd", "bnDelete", "bnRaise", "bnLower")
-# Swap up/down when layers move to the left (Layout B).
 LAYER_BUTTONS_LAYERS_LEFT = ("bnAdd", "bnDelete", "bnLower", "bnRaise")
 
 
@@ -95,9 +98,10 @@ def toolbox_order_for_profile(profile):
 
 
 def brush_preset_order_for_profile(profile):
+    """Display order for the two study presets."""
     if profile_flags(profile).get("presets_in_toolbar"):
-        return BRUSH_PRESET_ORDER_SWAPPED
-    return BRUSH_PRESET_ORDER_DEFAULT
+        return BRUSH_PRESET_ORDER_AFTER_MOVE
+    return BRUSH_PRESET_ORDER_LAYOUT_A
 
 
 def layer_button_order_for_profile(profile):
