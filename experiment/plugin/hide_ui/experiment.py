@@ -207,29 +207,42 @@ def _sync_login_password_hashes(login_plain):
 
 
 def load_passwords_config():
-    """Load login + skip passwords; creates passwords_plain.json if missing."""
+    """Load login + skip passwords from passwords_plain.json (shipped with the pack)."""
     global _passwords_config_cache
-    defaults = _default_passwords_config()
-    cfg = defaults
+    cfg = {"login": {}, "skip_learning": {}, "skip_recall": {}}
     try:
         if os.path.isfile(PASSWORDS_PLAIN_FILE):
             with open(PASSWORDS_PLAIN_FILE) as f:
                 stored = json.load(f)
-            cfg = _merge_passwords_config(stored, defaults)
+            # Do not invent random fillers — only keep explicit stored values.
+            for section in ("login", "skip_learning", "skip_recall"):
+                if isinstance(stored.get(section), dict):
+                    for key, val in stored[section].items():
+                        if val is not None and str(val).strip():
+                            cfg[section][str(key)] = str(val)
         else:
-            with open(PASSWORDS_PLAIN_FILE, "w") as f:
-                json.dump(defaults, f, indent=2, sort_keys=True)
-            _log("Created passwords_plain.json with default passwords")
+            _log("passwords_plain.json missing — using passwords.json only")
     except Exception:
         _log(traceback.format_exc())
-        cfg = defaults
     _passwords_config_cache = cfg
     return cfg
 
 
 def load_password_hashes():
     cfg = load_passwords_config()
-    return _sync_login_password_hashes(cfg["login"])
+    login = cfg.get("login") or {}
+    if login:
+        return _sync_login_password_hashes(login)
+    # No plain passwords available: keep the shipped hashed file as-is.
+    try:
+        if os.path.exists(PASSWORDS_FILE):
+            with open(PASSWORDS_FILE) as f:
+                stored = json.load(f)
+            if isinstance(stored, dict) and stored:
+                return stored
+    except Exception:
+        _log(traceback.format_exc())
+    return {}
 
 
 def get_skip_learning_password(session):

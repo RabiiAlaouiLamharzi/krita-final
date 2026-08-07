@@ -22,9 +22,6 @@ experiment/participant_data/
 experiment/analysis/
 ~/krita_experiment_data/
 
-# Plain-text passwords for experimenters (local only)
-experiment/plugin/hide_ui/passwords_plain.json
-
 # Layout state cache — ship pre-baked blobs; ignore other runtime captures
 *.state
 !experiment/layout_states/
