@@ -62,6 +62,9 @@ TIMER_BLINK_MS = 400
 LOADING_EXTRA_SETTLE_MS = 1000
 # Hard cap so recall never sits forever on "Preparing…" (slow machines / missed timers).
 RECALL_AUTO_START_FAILSAFE_MS = 18000
+# Watchdog for hangs before auto-start even begins (reveal/setup exceptions).
+RECALL_WATCHDOG_MS = 30000
+RECALL_WATCHDOG_RETRY_MS = 15000
 RECALL_OVERLAY_WARMUP_DELAYS_MS = (120, 400, 850)
 RECALL_FEEDBACK_CORRECT = (
     "border: 3px solid #28a745; border-radius: 4px;"
@@ -1836,26 +1839,31 @@ class HideUIExtension(Extension):
 
         def finish_reveal():
             self._polish_reveal_active = False
-            self._update_loading_progress(100, "Ready")
-            QApplication.processEvents()
-            if skip_krita_reveal:
-                # Keep the full-screen cover; recall auto-start dismisses it.
-                if self._qwin_alive():
-                    pos, size = self._compute_geometry(qwin)
-                    self._fixed_pos = pos
-                    self._fixed_size = size
-                    qwin.setFixedSize(size)
-                    qwin.move(pos)
-                    self._lock_window(qwin, show=False)
-                _log("polished reveal complete (krita deferred, cover kept)")
-            else:
-                self._hide_loading_screen()
-                self._present_krita(qwin)
-                if self._qwin_alive():
-                    self._lock_window(qwin, show=True)
-                    self._enforce_window_geometry()
-                QTimer.singleShot(100, lambda: self._focus_canvas(qwin))
-                _log("polished reveal complete")
+            # Any exception here must never swallow on_ready — otherwise the
+            # loading cover stays up forever with no failsafe armed.
+            try:
+                self._update_loading_progress(100, "Ready")
+                QApplication.processEvents()
+                if skip_krita_reveal:
+                    # Keep the full-screen cover; recall auto-start dismisses it.
+                    if self._qwin_alive():
+                        pos, size = self._compute_geometry(qwin)
+                        self._fixed_pos = pos
+                        self._fixed_size = size
+                        qwin.setFixedSize(size)
+                        qwin.move(pos)
+                        self._lock_window(qwin, show=False)
+                    _log("polished reveal complete (krita deferred, cover kept)")
+                else:
+                    self._hide_loading_screen()
+                    self._present_krita(qwin)
+                    if self._qwin_alive():
+                        self._lock_window(qwin, show=True)
+                        self._enforce_window_geometry()
+                    QTimer.singleShot(100, lambda: self._focus_canvas(qwin))
+                    _log("polished reveal complete")
+            except Exception:
+                _log(traceback.format_exc())
             if on_ready:
                 on_ready(True)
 
@@ -1869,7 +1877,11 @@ class HideUIExtension(Extension):
                 if on_ready:
                     on_ready(False)
                 return
-            self._sync_polish_pass(qwin)
+            try:
+                self._sync_polish_pass(qwin)
+            except Exception:
+                # Polish is best-effort; continuing beats hanging on the cover.
+                _log(traceback.format_exc())
             # Extra settle so the full-screen cover never drops mid-layout.
             QTimer.singleShot(LOADING_EXTRA_SETTLE_MS, finish_reveal)
 
@@ -5348,10 +5360,15 @@ class HideUIExtension(Extension):
             def after_reveal(ok):
                 self._phase_transition_busy = False
                 if not ok:
-                    return
+                    # Never leave the cover up with nothing scheduled — push on
+                    # to setup, whose auto-start path has its own failsafe.
+                    _log("recall reveal reported failure — continuing anyway")
+                    if self._quitting or not self._recall_active:
+                        return
                 self._finish_recall_setup(qwin)
 
             self._recall_krita_hidden_until_start = True
+            self._arm_recall_watchdog(qwin)
             self._run_polished_reveal(
                 qwin, prepare, on_ready=after_reveal, skip_krita_reveal=True)
             return True
@@ -5399,6 +5416,45 @@ class HideUIExtension(Extension):
                 self._hide_loading_screen()
                 if _qt_alive(qwin) and self._recall_active:
                     self._recall_auto_start_go(qwin)
+
+    def _arm_recall_watchdog(self, qwin):
+        """Last-resort guard: if question 1 never starts, force the auto-start.
+
+        Covers hangs between _begin_recall and _begin_recall_auto_start that
+        the auto-start failsafe (armed later) cannot see.
+        """
+        self._recall_watchdog_token = int(
+            getattr(self, "_recall_watchdog_token", 0) or 0) + 1
+        token = self._recall_watchdog_token
+        QTimer.singleShot(
+            RECALL_WATCHDOG_MS,
+            lambda q=qwin, t=token: self._recall_watchdog_fire(q, t))
+
+    def _recall_watchdog_fire(self, qwin, token):
+        try:
+            if token != getattr(self, "_recall_watchdog_token", 0):
+                return
+            if self._quitting or not self._recall_active:
+                return
+            if getattr(self, "_recall_first_question_started", False):
+                return
+            if getattr(self, "_recall_auto_starting", False):
+                return  # auto-start failsafe already armed
+            if getattr(self, "_phase_transition_busy", False):
+                _log("recall watchdog: prep still busy, re-arming")
+                QTimer.singleShot(
+                    RECALL_WATCHDOG_RETRY_MS,
+                    lambda q=qwin, t=token: self._recall_watchdog_fire(q, t))
+                return
+            _log("recall watchdog: recall stalled — forcing auto-start")
+            self._polish_reveal_active = False
+            if not _qt_alive(qwin):
+                qwin = self._qwin
+            if not _qt_alive(qwin):
+                return
+            self._begin_recall_auto_start(qwin)
+        except Exception:
+            _log(traceback.format_exc())
 
     def _begin_recall_auto_start(self, qwin):
         """Cover Krita until overlays settle, then start question 1 automatically."""
@@ -6031,6 +6087,7 @@ class HideUIExtension(Extension):
             self._recall_index = 0
             self._recall_results = []
             self._recall_awaiting_first_question = False
+            self._recall_first_question_started = False
             self._recall_question_time_sec = self._recall_meta["question_time_sec"]
             self._recall_phase_time_sec = self._recall_meta.get("phase_time_sec")
             self._recall_phase_remaining_sec = self._recall_phase_time_sec
@@ -6127,6 +6184,7 @@ class HideUIExtension(Extension):
     def _start_recall_question(self, qwin):
         if self._quitting or not self._recall_active:
             return
+        self._recall_first_question_started = True
         if self._recall_index >= len(self._recall_questions):
             self._finish_recall_phase(qwin)
             return
