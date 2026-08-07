@@ -23,6 +23,7 @@ CHURN_STEP_MS = 60          # in-place document reset path
 CHURN_STEP_MS_SLOW = 120    # close/create document path
 CHURN_NEUTRALIZE_MS = 150   # pause before createDocument
 CANVAS_WAIT_MS = 40         # poll interval while waiting for canvas
+CANVAS_WAIT_MAX_ATTEMPTS = 150  # 150 × 40 ms = 6 s max (was 60 = 2.4 s)
 STUDY_CHROME_TOOLBAR = "hideuiStudyBar"
 NATIVE_TOOLBARS = ("editToolBar", "BrushesAndStuff")
 STUDY_TOOLBARS = (STUDY_CHROME_TOOLBAR,) + NATIVE_TOOLBARS
@@ -60,7 +61,7 @@ TIMER_BLINK_MS = 400
 # Extra beat after learning/recall prep so the full-screen cover never drops mid-layout.
 LOADING_EXTRA_SETTLE_MS = 1000
 # Hard cap so recall never sits forever on "Preparing…" (slow machines / missed timers).
-RECALL_AUTO_START_FAILSAFE_MS = 8000
+RECALL_AUTO_START_FAILSAFE_MS = 18000
 RECALL_OVERLAY_WARMUP_DELAYS_MS = (120, 400, 850)
 RECALL_FEEDBACK_CORRECT = (
     "border: 3px solid #28a745; border-radius: 4px;"
@@ -4889,7 +4890,8 @@ class HideUIExtension(Extension):
             root.addChildNode(layer, None)
             doc.setActiveNode(layer)
             doc.refreshProjection()
-            doc.waitForDone()
+            # Do not call waitForDone() synchronously — it blocks the Qt event
+            # loop on slow machines, stalling all QTimer callbacks behind it.
             self._ensure_white_canvas_background(doc)
             self._canvas_w = None
             self._session1_doc_ready = False
@@ -5000,7 +5002,7 @@ class HideUIExtension(Extension):
                     QTimer.singleShot(CHURN_STEP_MS, step_restore)
                     return
                 attempts[0] += 1
-                if attempts[0] > 60:
+                if attempts[0] > CANVAS_WAIT_MAX_ATTEMPTS:
                     _log("prepare_study_canvas: timeout (%s)" % label)
                     fail()
                 else:
