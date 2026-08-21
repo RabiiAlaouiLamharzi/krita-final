@@ -1,0 +1,32 @@
+{
+  "data_source_folder": "data 4",
+  "exclude": [
+    "P12",
+    "P21",
+    "P35",
+    "P36"
+  ],
+  "n_participants": 16,
+  "n_abrupt": 8,
+  "n_incremental": 8,
+  "n_trials": 1776,
+  "n_unanswered": 11,
+  "pids": [
+    "P00",
+    "P01",
+    "P02",
+    "P03",
+    "P04",
+    "P05",
+    "P10",
+    "P16",
+    "P20",
+    "P24",
+    "P25",
+    "P28",
+    "P31",
+    "P32",
+    "P33",
+    "P37"
+  ]
+}
