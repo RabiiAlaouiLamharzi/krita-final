@@ -1,6 +1,6 @@
 # krita-final (study experiment)
 
-Krita UI learning study — plugin + packaging for **macOS** and **Windows** participant downloads.
+Krita UI learning study — plugin + packaging for **macOS**, **Windows**, and **Linux** participant downloads.
 
 **Standard Krita version: 5.3.2** (same minor on both platforms).
 
@@ -8,7 +8,7 @@ Krita UI learning study — plugin + packaging for **macOS** and **Windows** par
 
 1. Install **Krita 5.3.2** from [krita.org/download](https://krita.org/en/download/)
 2. Open the [download page](https://rabiialaouilamharzi.github.io/krita-final/) **or** [Releases](https://github.com/RabiiAlaouiLamharzi/krita-final/releases) and get **KritaStudy-pack.zip**
-3. Unzip → run **Launch Study** (Mac: Right‑click → Open; Windows: double‑click the `.bat`)
+3. Unzip → run **Launch Study** (Mac: Right‑click → Open; Windows: double‑click the `.bat`; Linux: `bash "Launch Study.sh"`)
 4. Log in with experimenter credentials
 
 See [experiment/dist/README.md](experiment/dist/README.md) to rebuild packages.
@@ -29,6 +29,14 @@ open -a /Applications/krita.app --args -nosplash
 cd experiment
 powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
 # then start krita.exe -nosplash
+```
+
+### Linux
+
+```bash
+cd experiment
+bash install-linux.sh
+krita --nosplash
 ```
 
 ## Notes

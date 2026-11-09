@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="28" height="28" fill="none">
+  <rect x="3" y="5" width="22" height="16" rx="2" stroke="#1a1a1a" stroke-width="1.6"/>
+  <path d="M8 21.5h12v1.5H8z" fill="#1a1a1a"/>
+  <text x="7" y="16" font-family="ui-monospace, monospace" font-size="8" fill="#1a1a1a">&gt;_</text>
+</svg>

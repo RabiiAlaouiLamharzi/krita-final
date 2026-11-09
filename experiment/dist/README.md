@@ -40,6 +40,9 @@ Landing page: `docs/index.html` (links to latest release assets).
 # macOS
 cd experiment && bash install-mac.sh
 
+# Linux
+cd experiment && bash install-linux.sh
+
 # Windows (PowerShell)
 cd experiment
 powershell -ExecutionPolicy Bypass -File .\install-windows.ps1

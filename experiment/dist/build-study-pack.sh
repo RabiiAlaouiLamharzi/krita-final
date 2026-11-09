@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build a small study pack (no Krita.app): participants install Krita from krita.org.
-# Output: KritaStudy-pack.zip (macOS + Windows launchers)
+# Output: KritaStudy-pack.zip (macOS + Windows + Linux launchers)
 
 set -euo pipefail
 
@@ -195,6 +195,75 @@ endlocal
 EOF
 perl -pi -e 's/\n/\r\n/' "$STAGE/Launch Study.bat"
 
+cat > "$STAGE/Launch Study.sh" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+cd "$(cd "$(dirname "$0")" && pwd)"
+
+echo "Installing study plugin into your Krita profile…"
+bash "$(pwd)/study-pack/install-linux.sh"
+
+find_krita() {
+  local p found
+  if command -v krita >/dev/null 2>&1; then
+    command -v krita
+    return 0
+  fi
+  for p in \
+    /usr/bin/krita \
+    /usr/local/bin/krita \
+    "$HOME/.local/bin/krita"
+  do
+    if [ -x "$p" ]; then
+      echo "$p"
+      return 0
+    fi
+  done
+  found="$(find "$HOME/Downloads" "$HOME/Desktop" "$HOME/Applications" "$HOME/bin" \
+    -maxdepth 2 -iname 'krita*.appimage' 2>/dev/null | head -1 || true)"
+  if [ -n "$found" ] && [ -f "$found" ]; then
+    echo "$found"
+    return 0
+  fi
+  return 1
+}
+
+echo ""
+echo "Opening Krita…"
+if KRITA_BIN="$(find_krita)"; then
+  echo "Found: $KRITA_BIN"
+  chmod +x "$KRITA_BIN" 2>/dev/null || true
+  nohup "$KRITA_BIN" --nosplash >/dev/null 2>&1 &
+  exit 0
+fi
+
+if command -v flatpak >/dev/null 2>&1 && flatpak info org.kde.krita >/dev/null 2>&1; then
+  echo "Found Flatpak Krita"
+  nohup flatpak run org.kde.krita --nosplash >/dev/null 2>&1 &
+  exit 0
+fi
+
+if command -v snap >/dev/null 2>&1 && snap list krita >/dev/null 2>&1; then
+  echo "Found Snap Krita"
+  nohup snap run krita --nosplash >/dev/null 2>&1 &
+  exit 0
+fi
+
+echo ""
+echo "ERROR: Krita was not found."
+echo ""
+echo "Do this, then run Launch Study.sh again:"
+echo "  1. Install Krita 5.3.2 from https://krita.org/en/download/"
+echo "     (AppImage is fine: put it on the Desktop or in Downloads)"
+echo "  2. Open Krita once, then quit it"
+echo "  3. In a terminal, from this unzipped folder:"
+echo "       bash \"Launch Study.sh\""
+echo ""
+read -r -p "Press Enter to close…"
+exit 1
+EOF
+chmod +x "$STAGE/Launch Study.sh"
+
 cat > "$STAGE/README-PARTICIPANT.txt" <<'EOF'
 Krita UI Learning Study — setup pack
 
@@ -218,6 +287,13 @@ Windows:
     (SmartScreen: More info → Run anyway)
   - If something fails, run study-pack\diagnose-windows.ps1 and
     send the output to the experimenter
+
+Linux:
+  - Install Krita 5.3.2 (package, AppImage, or Flatpak), open it once, quit it
+  - Unzip this folder
+  - In a terminal, from this folder:
+      bash "Launch Study.sh"
+  - Native, AppImage, and Flatpak profiles are supported
 
 3) Log in with the credentials your experimenter sent you.
 
